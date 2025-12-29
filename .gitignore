@@ -1,0 +1,28 @@
+# Notes and specs (private)
+notes/
+specs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Reference project (not part of this repo)
+claude-code-transcripts/

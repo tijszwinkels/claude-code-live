@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code Live</title>
+    <style>{{ css|safe }}</style>
+</head>
+<body>
+    <div class="status-bar" id="status-bar">
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+        <div id="message-count">0 messages</div>
+    </div>
+    <div class="container">
+        <h1>Claude Code Live</h1>
+        <div id="messages"></div>
+    </div>
+    <script>
+    (function() {
+        const container = document.getElementById('messages');
+        const statusBar = document.getElementById('status-bar');
+        const statusText = document.getElementById('status-text');
+        const messageCount = document.getElementById('message-count');
+        let count = 0;
+        let eventSource = null;
+        const MAX_MESSAGES = 500;
+
+        function updateStatus(status, text) {
+            statusBar.className = 'status-bar ' + status;
+            statusText.textContent = text;
+        }
+
+        function isNearBottom() {
+            const threshold = 150;
+            return (window.innerHeight + window.scrollY) >= (document.body.offsetHeight - threshold);
+        }
+
+        function processNewElement(element) {
+            // Localize timestamps
+            element.querySelectorAll('time[data-timestamp]').forEach(function(el) {
+                const timestamp = el.getAttribute('data-timestamp');
+                const date = new Date(timestamp);
+                const now = new Date();
+                const isToday = date.toDateString() === now.toDateString();
+                const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                if (isToday) { el.textContent = timeStr; }
+                else { el.textContent = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr; }
+            });
+
+            // Syntax highlight JSON
+            element.querySelectorAll('pre.json').forEach(function(el) {
+                let text = el.textContent;
+                text = text.replace(/"([^"]+)":/g, '<span style="color: #ce93d8">"$1"</span>:');
+                text = text.replace(/: "([^"]*)"/g, ': <span style="color: #81d4fa">"$1"</span>');
+                text = text.replace(/: (\d+)/g, ': <span style="color: #ffcc80">$1</span>');
+                text = text.replace(/: (true|false|null)/g, ': <span style="color: #f48fb1">$1</span>');
+                el.innerHTML = text;
+            });
+
+            // Setup truncatable content
+            element.querySelectorAll('.truncatable').forEach(function(wrapper) {
+                const content = wrapper.querySelector('.truncatable-content');
+                const btn = wrapper.querySelector('.expand-btn');
+                if (content && btn && content.scrollHeight > 250) {
+                    wrapper.classList.add('truncated');
+                    btn.addEventListener('click', function() {
+                        if (wrapper.classList.contains('truncated')) {
+                            wrapper.classList.remove('truncated');
+                            wrapper.classList.add('expanded');
+                            btn.textContent = 'Show less';
+                        } else {
+                            wrapper.classList.remove('expanded');
+                            wrapper.classList.add('truncated');
+                            btn.textContent = 'Show more';
+                        }
+                    });
+                }
+            });
+        }
+
+        function appendMessage(html) {
+            const wasNearBottom = isNearBottom();
+
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            const msg = temp.firstElementChild;
+
+            if (msg) {
+                container.appendChild(msg);
+                processNewElement(msg);
+                count++;
+                messageCount.textContent = count + ' message' + (count !== 1 ? 's' : '');
+
+                // Prune old messages if over limit
+                while (container.children.length > MAX_MESSAGES) {
+                    container.removeChild(container.firstChild);
+                }
+
+                // Auto-scroll if near bottom
+                if (wasNearBottom) {
+                    msg.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                }
+            }
+        }
+
+        function connect() {
+            updateStatus('reconnecting', 'Connecting...');
+
+            eventSource = new EventSource('/events');
+
+            eventSource.addEventListener('init', function(e) {
+                const data = JSON.parse(e.data);
+                updateStatus('', 'Connected - ' + data.session_path);
+                console.log('Connected to session:', data.session_id);
+            });
+
+            eventSource.addEventListener('message', function(e) {
+                const data = JSON.parse(e.data);
+                if (data.type === 'html') {
+                    appendMessage(data.content);
+                }
+            });
+
+            eventSource.addEventListener('ping', function(e) {
+                // Keep-alive, no action needed
+            });
+
+            eventSource.onopen = function() {
+                updateStatus('', 'Connected');
+            };
+
+            eventSource.onerror = function(e) {
+                if (eventSource.readyState === EventSource.CLOSED) {
+                    updateStatus('disconnected', 'Disconnected');
+                } else {
+                    updateStatus('reconnecting', 'Reconnecting...');
+                }
+            };
+        }
+
+        // Start connection
+        connect();
+
+        // Handle visibility change to reconnect when tab becomes visible
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible' && eventSource.readyState === EventSource.CLOSED) {
+                connect();
+            }
+        });
+    })();
+    </script>
+</body>
+</html>
