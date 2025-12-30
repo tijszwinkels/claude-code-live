@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 import uvicorn
 
-from .tailer import find_most_recent_session
+from .tailer import find_most_recent_session, find_recent_sessions
 
 __version__ = "0.1.0"
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @click.option(
     "--session", "-s",
     type=click.Path(exists=True, path_type=Path),
-    help="Session file to watch (defaults to most recent)",
+    help="Watch a specific session file (in addition to auto-discovered sessions)",
 )
 @click.option(
     "--port", "-p",
@@ -42,20 +42,27 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Enable debug logging",
 )
+@click.option(
+    "--max-sessions",
+    type=int,
+    default=10,
+    help="Maximum number of sessions to track (default: 10)",
+)
 def main(
     session: Path | None,
     port: int,
     host: str,
     no_open: bool,
     debug: bool,
+    max_sessions: int,
 ) -> None:
     """Start a live-updating transcript viewer for Claude Code sessions.
 
-    Watches a Claude Code session file and serves a live-updating HTML view
-    that automatically shows new messages as they appear.
+    Watches Claude Code session files and serves a live-updating HTML view
+    with tabs for each session. New messages appear automatically.
 
-    If no session is specified, watches the most recently modified session
-    file in ~/.claude/projects/.
+    By default, discovers and watches the most recent sessions in
+    ~/.claude/projects/. Use --session to add a specific session file.
     """
     # Configure logging
     log_level = logging.DEBUG if debug else logging.INFO
@@ -64,19 +71,26 @@ def main(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Find session to watch
-    if session is None:
-        session = find_most_recent_session()
-        if session is None:
-            click.echo("No session files found in ~/.claude/projects/", err=True)
-            click.echo("Specify a session file with --session", err=True)
-            raise SystemExit(1)
-
-    click.echo(f"Watching: {session}")
-
-    # Configure server with the session path
+    # Configure server
     from . import server
-    server.set_session_path(session)
+    server.MAX_SESSIONS = max_sessions
+
+    # If a specific session is provided, add it first
+    if session is not None:
+        click.echo(f"Watching: {session}")
+        server.add_session(session)
+
+    # Check if any sessions were found
+    recent = find_recent_sessions(limit=max_sessions)
+    if not recent and session is None:
+        click.echo("No session files found in ~/.claude/projects/", err=True)
+        click.echo("Specify a session file with --session", err=True)
+        raise SystemExit(1)
+
+    count = len(recent)
+    if session:
+        count += 1
+    click.echo(f"Found {count} session(s) to watch")
 
     # Open browser
     url = f"http://{host}:{port}"

@@ -12,25 +12,59 @@
             <span class="status-dot"></span>
             <span id="status-text">Connecting...</span>
         </div>
-        <div id="message-count">0 messages</div>
+        <div id="session-count">0 sessions</div>
+    </div>
+    <div class="tab-bar" id="tab-bar">
+        <div class="tabs" id="tabs"></div>
+        <label class="auto-follow" id="auto-follow-label">
+            <input type="checkbox" id="auto-follow" checked>
+            Auto-follow
+        </label>
     </div>
     <div class="container">
         <h1>Claude Code Live</h1>
-        <div id="messages"></div>
+        <div id="sessions"></div>
     </div>
     <script>
     (function() {
-        const container = document.getElementById('messages');
+        const sessionsContainer = document.getElementById('sessions');
+        const tabsContainer = document.getElementById('tabs');
         const statusBar = document.getElementById('status-bar');
         const statusText = document.getElementById('status-text');
-        const messageCount = document.getElementById('message-count');
-        let count = 0;
+        const sessionCount = document.getElementById('session-count');
+        const autoFollowCheckbox = document.getElementById('auto-follow');
+        const autoFollowLabel = document.getElementById('auto-follow-label');
+
         let eventSource = null;
         const MAX_MESSAGES = 500;
+
+        // State
+        const sessions = new Map();  // session_id -> {name, container, messageCount, unread}
+        let activeSessionId = null;
+        let autoFollow = true;
+        let autoFollowDebounce = null;
+        let catchupComplete = false;  // Don't auto-follow during initial catchup
+
+        // Update auto-follow UI
+        function updateAutoFollowUI() {
+            autoFollow = autoFollowCheckbox.checked;
+            if (autoFollow) {
+                autoFollowLabel.classList.add('active');
+            } else {
+                autoFollowLabel.classList.remove('active');
+            }
+        }
+        autoFollowCheckbox.addEventListener('change', updateAutoFollowUI);
+        updateAutoFollowUI();
 
         function updateStatus(status, text) {
             statusBar.className = 'status-bar ' + status;
             statusText.textContent = text;
+        }
+
+        function updateSessionCount() {
+            const count = sessions.size;
+            sessionCount.textContent = count + ' session' + (count !== 1 ? 's' : '');
         }
 
         function isNearBottom() {
@@ -81,46 +115,182 @@
             });
         }
 
-        function appendMessage(html) {
+        function createSession(sessionId, name) {
+            if (sessions.has(sessionId)) return sessions.get(sessionId);
+
+            // Create container
+            const container = document.createElement('div');
+            container.className = 'session-container';
+            container.dataset.session = sessionId;
+            sessionsContainer.appendChild(container);
+
+            // Create tab
+            const tab = document.createElement('div');
+            tab.className = 'tab';
+            tab.dataset.session = sessionId;
+            tab.innerHTML = `
+                <span class="tab-name">${escapeHtml(name)}</span>
+                <span class="close-btn" title="Close tab">&times;</span>
+            `;
+            tab.addEventListener('click', function(e) {
+                if (e.target.classList.contains('close-btn')) {
+                    removeSession(sessionId);
+                } else {
+                    switchToSession(sessionId);
+                }
+            });
+            tabsContainer.appendChild(tab);
+
+            const session = {
+                id: sessionId,
+                name: name,
+                container: container,
+                tab: tab,
+                messageCount: 0
+            };
+            sessions.set(sessionId, session);
+            updateSessionCount();
+
+            // If this is the first session, activate it
+            if (sessions.size === 1) {
+                switchToSession(sessionId);
+            }
+
+            return session;
+        }
+
+        function removeSession(sessionId) {
+            const session = sessions.get(sessionId);
+            if (!session) return;
+
+            session.container.remove();
+            session.tab.remove();
+            sessions.delete(sessionId);
+            updateSessionCount();
+
+            // If we removed the active session, switch to another
+            if (activeSessionId === sessionId) {
+                const firstSession = sessions.keys().next().value;
+                if (firstSession) {
+                    switchToSession(firstSession);
+                } else {
+                    activeSessionId = null;
+                }
+            }
+        }
+
+        function switchToSession(sessionId, scrollToBottom = false) {
+            const session = sessions.get(sessionId);
+            if (!session) return;
+
+            // Update containers
+            sessions.forEach(function(s) {
+                s.container.classList.remove('active');
+                s.tab.classList.remove('active');
+            });
+            session.container.classList.add('active');
+            session.tab.classList.add('active');
+            activeSessionId = sessionId;
+
+            // Scroll to bottom if requested (e.g., after auto-follow switch)
+            if (scrollToBottom) {
+                requestAnimationFrame(function() {
+                    window.scrollTo(0, document.body.scrollHeight);
+                });
+            }
+        }
+
+
+        function appendMessage(sessionId, html) {
+            const session = sessions.get(sessionId);
+            if (!session) return;
+
             const wasNearBottom = isNearBottom();
+            const isActiveSession = sessionId === activeSessionId;
 
             const temp = document.createElement('div');
             temp.innerHTML = html;
             const msg = temp.firstElementChild;
 
             if (msg) {
-                container.appendChild(msg);
+                session.container.appendChild(msg);
                 processNewElement(msg);
-                count++;
-                messageCount.textContent = count + ' message' + (count !== 1 ? 's' : '');
+                session.messageCount++;
 
                 // Prune old messages if over limit
-                while (container.children.length > MAX_MESSAGES) {
-                    container.removeChild(container.firstChild);
+                while (session.container.children.length > MAX_MESSAGES) {
+                    session.container.removeChild(session.container.firstChild);
                 }
 
-                // Auto-scroll if near bottom
-                if (wasNearBottom) {
+                // Handle auto-follow (only after initial catchup is complete)
+                if (catchupComplete && autoFollow && !isActiveSession) {
+                    // Debounce auto-follow to avoid thrashing
+                    if (autoFollowDebounce) clearTimeout(autoFollowDebounce);
+                    autoFollowDebounce = setTimeout(function() {
+                        switchToSession(sessionId, true);  // Scroll to bottom on auto-follow
+                    }, 100);
+                }
+
+                // Auto-scroll: always scroll if auto-follow is on, or if near bottom
+                if (isActiveSession && (autoFollow || wasNearBottom)) {
                     msg.scrollIntoView({ behavior: 'smooth', block: 'end' });
                 }
             }
         }
 
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function connect() {
             updateStatus('reconnecting', 'Connecting...');
+            catchupComplete = false;  // Reset for new connection
 
             eventSource = new EventSource('/events');
 
-            eventSource.addEventListener('init', function(e) {
+            eventSource.addEventListener('sessions', function(e) {
                 const data = JSON.parse(e.data);
-                updateStatus('', 'Connected - ' + data.session_path);
-                console.log('Connected to session:', data.session_id);
+                data.sessions.forEach(function(session) {
+                    createSession(session.id, session.name);
+                });
+                updateStatus('', 'Connected - ' + data.sessions.length + ' sessions');
+
+                // Mark catchup as complete after a short delay
+                // (allows initial message burst to finish without triggering auto-follow)
+                setTimeout(function() {
+                    catchupComplete = true;
+                    // Scroll the active session to bottom after catchup
+                    if (activeSessionId) {
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }
+                }, 500);
+            });
+
+            eventSource.addEventListener('session_added', function(e) {
+                const data = JSON.parse(e.data);
+                const session = createSession(data.id, data.name);
+                updateSessionCount();
+                // Auto-switch to newly added sessions (they're likely the active one)
+                if (autoFollow && session) {
+                    switchToSession(data.id, true);  // Scroll to bottom on auto-follow
+                }
+            });
+
+            eventSource.addEventListener('session_removed', function(e) {
+                const data = JSON.parse(e.data);
+                removeSession(data.id);
             });
 
             eventSource.addEventListener('message', function(e) {
                 const data = JSON.parse(e.data);
-                if (data.type === 'html') {
-                    appendMessage(data.content);
+                if (data.type === 'html' && data.session_id) {
+                    // Ensure session exists
+                    if (!sessions.has(data.session_id)) {
+                        createSession(data.session_id, data.session_id.substring(0, 8));
+                    }
+                    appendMessage(data.session_id, data.content);
                 }
             });
 

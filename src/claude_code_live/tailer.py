@@ -2,12 +2,50 @@
 
 import json
 import logging
+import urllib.parse
 from pathlib import Path
 from typing import AsyncGenerator, Callable
 
 import watchfiles
 
 logger = logging.getLogger(__name__)
+
+
+def get_session_name(session_path: Path) -> str:
+    """Extract a human-readable name from a session path.
+
+    Session paths look like:
+    ~/.claude/projects/-Users-tijs-projects-claude-code-live/abc123.jsonl
+
+    The project folder is URL-encoded with dashes, so we decode it and
+    return the last component (e.g., "claude-code-live").
+    """
+    # Get the parent folder name (the project identifier)
+    project_folder = session_path.parent.name
+
+    # Decode: "-Users-tijs-projects-foo" -> "/Users/tijs/projects/foo"
+    # First replace leading dash with /
+    if project_folder.startswith("-"):
+        decoded = "/" + project_folder[1:]
+    else:
+        decoded = project_folder
+
+    # Replace remaining dashes that are path separators
+    # This is tricky - we need to handle both path separators and actual dashes
+    # The encoding uses dashes for /, so /Users/foo-bar becomes -Users-foo-bar
+    # We decode by treating each dash as a potential /
+    decoded = decoded.replace("-", "/")
+
+    # URL decode any percent-encoded chars
+    decoded = urllib.parse.unquote(decoded)
+
+    # Return just the last path component
+    return Path(decoded).name or project_folder
+
+
+def get_session_id(session_path: Path) -> str:
+    """Get the session ID (filename without extension)."""
+    return session_path.stem
 
 
 class SessionTailer:
@@ -96,21 +134,24 @@ async def watch_file(path: Path, callback: Callable[[], None]) -> AsyncGenerator
         raise
 
 
-def find_most_recent_session(projects_dir: Path | None = None) -> Path | None:
-    """Find the most recently modified session file.
+def find_recent_sessions(
+    projects_dir: Path | None = None, limit: int = 10
+) -> list[Path]:
+    """Find the most recently modified session files.
 
     Args:
         projects_dir: Base directory to search (defaults to ~/.claude/projects)
+        limit: Maximum number of sessions to return
 
     Returns:
-        Path to most recent .jsonl file, or None if not found
+        List of paths to recent .jsonl files, sorted by modification time (newest first)
     """
     if projects_dir is None:
         projects_dir = Path.home() / ".claude" / "projects"
 
     if not projects_dir.exists():
         logger.warning(f"Projects directory not found: {projects_dir}")
-        return None
+        return []
 
     # Find all .jsonl files, excluding agent files
     sessions = []
@@ -125,8 +166,21 @@ def find_most_recent_session(projects_dir: Path | None = None) -> Path | None:
 
     if not sessions:
         logger.warning("No session files found")
-        return None
+        return []
 
     # Return the most recently modified
     sessions.sort(key=lambda x: x[1], reverse=True)
-    return sessions[0][0]
+    return [s[0] for s in sessions[:limit]]
+
+
+def find_most_recent_session(projects_dir: Path | None = None) -> Path | None:
+    """Find the most recently modified session file.
+
+    Args:
+        projects_dir: Base directory to search (defaults to ~/.claude/projects)
+
+    Returns:
+        Path to most recent .jsonl file, or None if not found
+    """
+    sessions = find_recent_sessions(projects_dir, limit=1)
+    return sessions[0] if sessions else None

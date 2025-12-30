@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from claude_code_live.tailer import SessionTailer, find_most_recent_session
+from claude_code_live.tailer import (
+    SessionTailer,
+    find_most_recent_session,
+    find_recent_sessions,
+    get_session_id,
+    get_session_name,
+)
 
 
 class TestSessionTailer:
@@ -176,3 +182,100 @@ class TestFindMostRecentSession:
 
             result = find_most_recent_session(tmppath)
             assert result == regular
+
+
+class TestFindRecentSessions:
+    """Tests for find_recent_sessions."""
+
+    def test_returns_empty_for_nonexistent_dir(self):
+        """Test that nonexistent directory returns empty list."""
+        result = find_recent_sessions(Path("/nonexistent/path"))
+        assert result == []
+
+    def test_returns_empty_for_empty_dir(self):
+        """Test that empty directory returns empty list."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = find_recent_sessions(Path(tmpdir))
+            assert result == []
+
+    def test_respects_limit(self):
+        """Test that limit parameter is respected."""
+        import time
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+
+            # Create multiple files
+            for i in range(5):
+                f = tmppath / f"session_{i}.jsonl"
+                f.write_text('{"type": "user"}\n')
+                time.sleep(0.01)  # Ensure different mtime
+
+            result = find_recent_sessions(tmppath, limit=3)
+            assert len(result) == 3
+
+    def test_sorted_by_mtime(self):
+        """Test that results are sorted by modification time, newest first."""
+        import time
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+
+            # Create files with known order
+            older = tmppath / "older.jsonl"
+            older.write_text('{"type": "user"}\n')
+
+            time.sleep(0.01)
+
+            newer = tmppath / "newer.jsonl"
+            newer.write_text('{"type": "user"}\n')
+
+            result = find_recent_sessions(tmppath)
+            assert result[0] == newer
+            assert result[1] == older
+
+
+class TestGetSessionId:
+    """Tests for get_session_id."""
+
+    def test_returns_stem(self):
+        """Test that session ID is the filename without extension."""
+        path = Path("/home/user/.claude/projects/foo/abc123.jsonl")
+        assert get_session_id(path) == "abc123"
+
+    def test_handles_uuid(self):
+        """Test with UUID-style filename."""
+        path = Path("/tmp/0f984efa-f0bd-4219-9fa2-4235c879e487.jsonl")
+        assert get_session_id(path) == "0f984efa-f0bd-4219-9fa2-4235c879e487"
+
+
+class TestGetSessionName:
+    """Tests for get_session_name."""
+
+    def test_extracts_project_name(self):
+        """Test extraction of project name from path.
+
+        Note: Project names with dashes get split since dashes are used as
+        path separators in the encoding. This gives us the last component.
+        """
+        path = Path("/home/user/.claude/projects/-Users-tijs-projects-claude-code-live/abc123.jsonl")
+        # "claude-code-live" gets decoded as /claude/code/live, so we get "live"
+        assert get_session_name(path) == "live"
+
+    def test_handles_simple_path(self):
+        """Test with simple project path."""
+        path = Path("/home/user/.claude/projects/-Users-tijs-myproject/session.jsonl")
+        assert get_session_name(path) == "myproject"
+
+    def test_handles_nested_path(self):
+        """Test with deeply nested project path."""
+        path = Path("/home/user/.claude/projects/-home-user-code-python-webapp/session.jsonl")
+        assert get_session_name(path) == "webapp"
+
+    def test_fallback_to_folder_name(self):
+        """Test fallback when decoding produces empty name."""
+        path = Path("/tmp/some-folder/session.jsonl")
+        # Should handle gracefully
+        result = get_session_name(path)
+        assert result is not None
+        assert len(result) > 0

@@ -21,11 +21,14 @@ uvx claude-code-live
 ## Usage
 
 ```bash
-# Watch most recent session (auto-detected)
+# Watch all recent sessions (auto-detected, up to 10)
 claude-code-live
 
-# Watch specific session file
+# Watch a specific session file (in addition to auto-discovered ones)
 claude-code-live --session ~/.claude/projects/.../session.jsonl
+
+# Limit number of sessions
+claude-code-live --max-sessions 5
 
 # Custom port
 claude-code-live --port 8765
@@ -36,9 +39,12 @@ claude-code-live --no-open
 
 ## Features
 
+- **Multi-session tabs** - View multiple Claude Code sessions in a tabbed interface
+- **Auto-follow** - Automatically switches to the tab with new activity (optional)
 - **Live updates** - New messages appear automatically via Server-Sent Events
 - **Auto-scroll** - Follows new messages when you're at the bottom
 - **Resource-conscious** - Limits DOM nodes to prevent memory issues
+- **Session discovery** - Automatically finds recent sessions in ~/.claude/projects/
 - **Same styling** - Uses the same CSS as claude-code-transcripts
 
 ## Development

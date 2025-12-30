@@ -4,17 +4,251 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncGenerator
 
+import watchfiles
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from sse_starlette.sse import EventSourceResponse
 
 from .rendering import CSS, render_message, get_template
-from .tailer import SessionTailer, find_most_recent_session
+from .tailer import (
+    SessionTailer,
+    find_recent_sessions,
+    get_session_id,
+    get_session_name,
+)
 
 logger = logging.getLogger(__name__)
+
+# Configuration
+MAX_SESSIONS = 10
+
+
+@dataclass
+class SessionInfo:
+    """Information about a tracked session."""
+
+    path: Path
+    tailer: SessionTailer
+    name: str = ""
+    session_id: str = ""
+
+    def __post_init__(self):
+        if not self.name:
+            self.name = get_session_name(self.path)
+        if not self.session_id:
+            self.session_id = get_session_id(self.path)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.session_id,
+            "name": self.name,
+            "path": str(self.path),
+        }
+
+
+# Global state
+_sessions: dict[str, SessionInfo] = {}  # session_id -> SessionInfo
+_clients: set[asyncio.Queue] = set()
+_watch_task: asyncio.Task | None = None
+_projects_dir: Path | None = None
+_known_session_files: set[Path] = set()  # Track known files to detect new ones
+
+
+def get_projects_dir() -> Path:
+    """Get the projects directory path."""
+    global _projects_dir
+    if _projects_dir is None:
+        _projects_dir = Path.home() / ".claude" / "projects"
+    return _projects_dir
+
+
+def set_projects_dir(path: Path) -> None:
+    """Set the projects directory path (for testing)."""
+    global _projects_dir
+    _projects_dir = path
+
+
+def get_oldest_session_id() -> str | None:
+    """Find the oldest session by modification time."""
+    if not _sessions:
+        return None
+    oldest = min(
+        _sessions.items(),
+        key=lambda x: x[1].path.stat().st_mtime if x[1].path.exists() else float("inf"),
+    )
+    return oldest[0]
+
+
+def add_session(path: Path, evict_oldest: bool = True) -> tuple[SessionInfo | None, str | None]:
+    """Add a session to track.
+
+    Returns a tuple of (SessionInfo if added, evicted_session_id if one was removed).
+    Returns (None, None) if already tracked.
+    If at the session limit and evict_oldest=True, removes the oldest session to make room.
+    """
+    session_id = get_session_id(path)
+
+    if session_id in _sessions:
+        return None, None
+
+    evicted_id = None
+    # If at limit, remove the oldest session to make room
+    if len(_sessions) >= MAX_SESSIONS:
+        if evict_oldest:
+            oldest_id = get_oldest_session_id()
+            if oldest_id:
+                logger.info(f"Session limit reached, removing oldest: {oldest_id}")
+                remove_session(oldest_id)
+                evicted_id = oldest_id
+        else:
+            logger.debug(f"Session limit reached, not adding {path}")
+            return None, None
+
+    tailer = SessionTailer(path)
+    info = SessionInfo(path=path, tailer=tailer)
+    _sessions[session_id] = info
+    _known_session_files.add(path)
+    logger.info(f"Added session: {info.name} ({session_id})")
+    return info, evicted_id
+
+
+def remove_session(session_id: str) -> bool:
+    """Remove a session from tracking."""
+    if session_id in _sessions:
+        info = _sessions.pop(session_id)
+        _known_session_files.discard(info.path)
+        logger.info(f"Removed session: {info.name} ({session_id})")
+        return True
+    return False
+
+
+def get_sessions_list() -> list[dict]:
+    """Get list of all tracked sessions, sorted by modification time (newest first)."""
+    # Sort by file modification time, newest first
+    sorted_sessions = sorted(
+        _sessions.values(),
+        key=lambda info: info.path.stat().st_mtime if info.path.exists() else 0,
+        reverse=True,
+    )
+    return [info.to_dict() for info in sorted_sessions]
+
+
+async def broadcast_event(event_type: str, data: dict) -> None:
+    """Broadcast an event to all connected clients."""
+    dead_clients = []
+
+    for queue in _clients:
+        try:
+            queue.put_nowait({"event": event_type, "data": data})
+        except asyncio.QueueFull:
+            dead_clients.append(queue)
+
+    for queue in dead_clients:
+        _clients.discard(queue)
+
+
+async def broadcast_message(session_id: str, html: str) -> None:
+    """Broadcast a message to all connected clients."""
+    await broadcast_event("message", {
+        "type": "html",
+        "content": html,
+        "session_id": session_id,
+    })
+
+
+async def broadcast_session_added(info: SessionInfo) -> None:
+    """Broadcast that a new session was added."""
+    await broadcast_event("session_added", info.to_dict())
+
+
+async def broadcast_session_removed(session_id: str) -> None:
+    """Broadcast that a session was removed."""
+    await broadcast_event("session_removed", {"id": session_id})
+
+
+async def process_session_messages(session_id: str) -> None:
+    """Read new messages from a session and broadcast to clients."""
+    info = _sessions.get(session_id)
+    if info is None:
+        return
+
+    new_entries = info.tailer.read_new_lines()
+    for entry in new_entries:
+        html = render_message(entry)
+        if html:
+            await broadcast_message(session_id, html)
+
+
+async def check_for_new_sessions() -> None:
+    """Check for new session files and add them."""
+    projects_dir = get_projects_dir()
+    if not projects_dir.exists():
+        return
+
+    # Find all session files
+    for f in projects_dir.glob("**/*.jsonl"):
+        if f.name.startswith("agent-"):
+            continue
+        if f not in _known_session_files:
+            info, evicted_id = add_session(f)
+            if evicted_id:
+                await broadcast_session_removed(evicted_id)
+            if info:
+                await broadcast_session_added(info)
+
+
+async def watch_loop() -> None:
+    """Background task that watches for file changes."""
+    projects_dir = get_projects_dir()
+
+    if not projects_dir.exists():
+        logger.warning(f"Projects directory not found: {projects_dir}")
+        return
+
+    logger.info(f"Starting watch loop for {projects_dir}")
+
+    try:
+        async for changes in watchfiles.awatch(projects_dir):
+            for change_type, changed_path in changes:
+                changed_path = Path(changed_path)
+
+                # Skip non-jsonl files and agent files
+                if not changed_path.suffix == ".jsonl":
+                    continue
+                if changed_path.name.startswith("agent-"):
+                    continue
+
+                if change_type == watchfiles.Change.added:
+                    # New session file
+                    info, evicted_id = add_session(changed_path)
+                    if evicted_id:
+                        await broadcast_session_removed(evicted_id)
+                    if info:
+                        await broadcast_session_added(info)
+
+                elif change_type == watchfiles.Change.modified:
+                    # Existing file modified
+                    session_id = get_session_id(changed_path)
+                    if session_id in _sessions:
+                        await process_session_messages(session_id)
+                    elif changed_path not in _known_session_files:
+                        # File we haven't seen - might be new
+                        info, evicted_id = add_session(changed_path)
+                        if evicted_id:
+                            await broadcast_session_removed(evicted_id)
+                        if info:
+                            await broadcast_session_added(info)
+
+    except asyncio.CancelledError:
+        logger.info("Watch loop cancelled")
+        raise
+    except Exception as e:
+        logger.error(f"Watch loop error: {e}")
 
 
 @asynccontextmanager
@@ -22,17 +256,16 @@ async def lifespan(app: FastAPI):
     """Manage server lifecycle - start/stop file watcher."""
     global _watch_task
 
-    # Startup
-    if _session_path is None:
-        # Try to find the most recent session
-        path = find_most_recent_session()
-        if path:
-            set_session_path(path)
-        else:
-            logger.warning("No session file configured or found")
+    # Startup: find recent sessions
+    recent = find_recent_sessions(get_projects_dir(), limit=MAX_SESSIONS)
+    for path in recent:
+        add_session(path, evict_oldest=False)  # No eviction needed at startup
 
-    if _session_path is not None:
-        _watch_task = asyncio.create_task(watch_loop())
+    if not _sessions:
+        logger.warning("No session files found")
+
+    # Start watching for changes
+    _watch_task = asyncio.create_task(watch_loop())
 
     yield
 
@@ -47,79 +280,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Claude Code Live", lifespan=lifespan)
 
-# Global state
-_session_path: Path | None = None
-_tailer: SessionTailer | None = None
-_clients: set[asyncio.Queue] = set()
-_watch_task: asyncio.Task | None = None
-
-
-def set_session_path(path: Path) -> None:
-    """Set the session file to watch."""
-    global _session_path, _tailer
-    _session_path = path
-    _tailer = SessionTailer(path)
-    logger.info(f"Watching session: {path}")
-
-
-def get_session_display_path() -> str:
-    """Get a displayable version of the session path."""
-    if _session_path is None:
-        return "No session"
-    # Show just the last two path components (project/session.jsonl)
-    parts = _session_path.parts
-    if len(parts) >= 2:
-        return "/".join(parts[-2:])
-    return str(_session_path.name)
-
-
-async def broadcast_message(html: str) -> None:
-    """Send a message to all connected clients."""
-    event = {"type": "html", "content": html}
-    dead_clients = []
-
-    for queue in _clients:
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            dead_clients.append(queue)
-
-    for queue in dead_clients:
-        _clients.discard(queue)
-
-
-async def process_new_messages() -> None:
-    """Read new messages from file and broadcast to clients."""
-    if _tailer is None:
-        return
-
-    new_entries = _tailer.read_new_lines()
-    for entry in new_entries:
-        html = render_message(entry)
-        if html:
-            await broadcast_message(html)
-
-
-async def watch_loop() -> None:
-    """Background task that watches the file for changes."""
-    if _session_path is None:
-        return
-
-    logger.info(f"Starting watch loop for {_session_path}")
-
-    try:
-        import watchfiles
-
-        async for changes in watchfiles.awatch(_session_path):
-            for change_type, changed_path in changes:
-                if change_type == watchfiles.Change.modified:
-                    await process_new_messages()
-    except asyncio.CancelledError:
-        logger.info("Watch loop cancelled")
-        raise
-    except Exception as e:
-        logger.error(f"Watch loop error: {e}")
-
 
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
@@ -129,33 +289,40 @@ async def index() -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
+@app.get("/sessions")
+async def list_sessions() -> dict:
+    """List all tracked sessions."""
+    return {"sessions": get_sessions_list()}
+
+
 async def event_generator(request: Request) -> AsyncGenerator[dict, None]:
     """Generate SSE events for a client."""
     queue: asyncio.Queue = asyncio.Queue(maxsize=100)
     _clients.add(queue)
 
     try:
-        # Send init event
+        # Send sessions list
         yield {
-            "event": "init",
-            "data": json.dumps({
-                "session_id": _session_path.stem if _session_path else "none",
-                "session_path": get_session_display_path(),
-            }),
+            "event": "sessions",
+            "data": json.dumps({"sessions": get_sessions_list()}),
         }
 
-        # Send existing messages (catchup)
-        if _tailer:
-            existing = _tailer.read_all()
+        # Send existing messages for each session (catchup)
+        for session_id, info in _sessions.items():
+            existing = info.tailer.read_all()
             for entry in existing:
                 html = render_message(entry)
                 if html:
                     yield {
                         "event": "message",
-                        "data": json.dumps({"type": "html", "content": html}),
+                        "data": json.dumps({
+                            "type": "html",
+                            "content": html,
+                            "session_id": session_id,
+                        }),
                     }
 
-        # Stream new messages
+        # Stream new events
         ping_interval = 30  # seconds
 
         while True:
@@ -164,11 +331,11 @@ async def event_generator(request: Request) -> AsyncGenerator[dict, None]:
                 break
 
             try:
-                # Wait for new message with timeout for ping
+                # Wait for new event with timeout for ping
                 event = await asyncio.wait_for(queue.get(), timeout=ping_interval)
                 yield {
-                    "event": "message",
-                    "data": json.dumps(event),
+                    "event": event["event"],
+                    "data": json.dumps(event["data"]),
                 }
             except asyncio.TimeoutError:
                 # Send ping to keep connection alive
@@ -189,6 +356,12 @@ async def health() -> dict:
     """Health check endpoint."""
     return {
         "status": "ok",
-        "session": str(_session_path) if _session_path else None,
+        "sessions": len(_sessions),
         "clients": len(_clients),
     }
+
+
+# Legacy single-session API for backwards compatibility
+def set_session_path(path: Path) -> None:
+    """Set a single session file to watch (legacy API)."""
+    add_session(path, evict_oldest=False)
