@@ -59,6 +59,29 @@ class SessionTailer:
         self.position = 0  # Byte position in file
         self.buffer = ""  # Incomplete line buffer
         self.message_index = 0  # Count of messages yielded
+        self._first_timestamp: str | None = None  # Cached first message timestamp
+
+    def get_first_timestamp(self) -> str | None:
+        """Get the timestamp of the first message in the session."""
+        if self._first_timestamp is not None:
+            return self._first_timestamp
+
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        if obj.get("type") in ("user", "assistant"):
+                            self._first_timestamp = obj.get("timestamp", "")
+                            return self._first_timestamp
+                    except json.JSONDecodeError:
+                        continue
+        except (FileNotFoundError, IOError):
+            pass
+        return None
 
     def read_new_lines(self) -> list[dict]:
         """Read and parse new complete lines from the file.

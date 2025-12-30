@@ -44,10 +44,19 @@ class SessionInfo:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
+        # Get timestamps
+        started_at = self.tailer.get_first_timestamp()
+        try:
+            last_updated = self.path.stat().st_mtime
+        except OSError:
+            last_updated = None
+
         return {
             "id": self.session_id,
             "name": self.name,
             "path": str(self.path),
+            "startedAt": started_at,
+            "lastUpdatedAt": last_updated,
         }
 
 

@@ -115,7 +115,26 @@
             });
         }
 
-        function createSession(sessionId, name) {
+        function formatTimestamp(ts) {
+            if (!ts) return 'Unknown';
+            const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+            if (isNaN(date.getTime())) return 'Unknown';
+            const now = new Date();
+            const isToday = date.toDateString() === now.toDateString();
+            const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+            if (isToday) {
+                return 'Today ' + timeStr;
+            }
+            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr;
+        }
+
+        function updateTabTooltip(session) {
+            const started = formatTimestamp(session.startedAt);
+            const updated = formatTimestamp(session.lastUpdatedAt);
+            session.tab.title = 'Started: ' + started + '\nLast updated: ' + updated;
+        }
+
+        function createSession(sessionId, name, startedAt, lastUpdatedAt) {
             if (sessions.has(sessionId)) return sessions.get(sessionId);
 
             // Create container
@@ -147,10 +166,13 @@
                 container: container,
                 tab: tab,
                 messageCount: 0,
-                lastActivity: Date.now()
+                lastActivity: Date.now(),
+                startedAt: startedAt || null,
+                lastUpdatedAt: lastUpdatedAt || null
             };
             sessions.set(sessionId, session);
             updateSessionCount();
+            updateTabTooltip(session);
 
             // If this is the first session, activate it
             if (sessions.size === 1) {
@@ -254,6 +276,8 @@
                 // Update last activity and reorder tabs (only after catchup)
                 if (catchupComplete) {
                     session.lastActivity = Date.now();
+                    session.lastUpdatedAt = Date.now() / 1000;  // Unix timestamp in seconds
+                    updateTabTooltip(session);
                     reorderTabs();
                 }
 
@@ -293,7 +317,7 @@
             eventSource.addEventListener('sessions', function(e) {
                 const data = JSON.parse(e.data);
                 data.sessions.forEach(function(session) {
-                    createSession(session.id, session.name);
+                    createSession(session.id, session.name, session.startedAt, session.lastUpdatedAt);
                 });
                 updateStatus('', 'Connected - ' + data.sessions.length + ' sessions');
 
@@ -310,7 +334,7 @@
 
             eventSource.addEventListener('session_added', function(e) {
                 const data = JSON.parse(e.data);
-                const session = createSession(data.id, data.name);
+                const session = createSession(data.id, data.name, data.startedAt, data.lastUpdatedAt);
                 updateSessionCount();
                 // Auto-switch to newly added sessions (they're likely the active one)
                 if (autoFollow && session) {
@@ -328,7 +352,7 @@
                 if (data.type === 'html' && data.session_id) {
                     // Ensure session exists
                     if (!sessions.has(data.session_id)) {
-                        createSession(data.session_id, data.session_id.substring(0, 8));
+                        createSession(data.session_id, data.session_id.substring(0, 8), null, null);
                     }
                     appendMessage(data.session_id, data.content);
                 }
