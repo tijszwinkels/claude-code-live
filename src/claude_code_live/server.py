@@ -119,6 +119,9 @@ def add_session(path: Path, evict_oldest: bool = True) -> tuple[SessionInfo | No
             return None, None
 
     tailer = SessionTailer(path)
+    # Advance tailer position to end of file so process_session_messages
+    # only picks up truly new messages (catchup uses read_all with fresh tailer)
+    tailer.read_new_lines()
     info = SessionInfo(path=path, tailer=tailer)
     _sessions[session_id] = info
     _known_session_files.add(path)
