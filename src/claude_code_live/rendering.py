@@ -395,6 +395,11 @@ body { padding-top: 88px; padding-bottom: 80px; }
 /* New session button */
 .new-session-btn { padding: 6px 10px; border: 1px solid #e0e0e0; border-radius: 4px; background: var(--card-bg); color: var(--text-muted); font-size: 1rem; cursor: pointer; transition: all 0.15s; }
 .new-session-btn:hover { border-color: var(--user-border); color: var(--user-border); background: rgba(25, 118, 210, 0.05); }
+/* Pending session styles */
+.tab.pending { font-style: italic; opacity: 0.7; }
+.tab.pending .tab-name::before { content: '+ '; color: var(--user-border); }
+.pending-session-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; color: var(--text-muted); text-align: center; }
+.pending-session-placeholder p { margin: 0; font-size: 1rem; }
 @media (max-width: 600px) { html, body { max-width: 100vw; overflow-x: hidden; } body { padding: 8px; padding-top: 88px; padding-bottom: 140px; } .container { max-width: 100%; padding: 0; } .message { border-radius: 8px; } .message-content { padding: 12px; overflow-x: auto; } pre { font-size: 0.75rem; padding: 8px; } .input-bar { padding: 8px; flex-direction: column; gap: 8px; } .input-bar-left { width: 100%; } .input-bar-buttons { display: flex; gap: 8px; width: 100%; } .input-bar-buttons .send-btn, .input-bar-buttons .interrupt-btn { flex: 1; justify-content: center; } .tab-bar-right { gap: 4px; flex-shrink: 0; } .search-input { display: none; } .auto-follow span { display: none; } .auto-follow { padding: 8px 6px; } .tabs { min-width: 0; } .tab { padding: 10px 8px; font-size: 0.75rem; max-width: 120px; overflow: hidden; text-overflow: ellipsis; } .status-bar, .tab-bar { max-width: 100vw; box-sizing: border-box; } }
 """
 

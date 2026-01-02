@@ -76,6 +76,7 @@
         let catchupComplete = false;  // Don't auto-follow during initial catchup
         let sendEnabled = false;  // Whether sending messages is enabled
         const sessionStatus = new Map();  // session_id -> {running, queued_messages}
+        let pendingSessionCounter = 0;  // Counter for unique pending session IDs
 
         // Update auto-follow UI
         function updateAutoFollowUI() {
@@ -140,7 +141,18 @@
                 return;
             }
 
+            const session = sessions.get(activeSessionId);
             const status = sessionStatus.get(activeSessionId) || { running: false, queued_messages: 0 };
+
+            // Handle pending session that is starting (waiting for real session to appear)
+            if (session && session.pending && session.starting) {
+                inputStatus.innerHTML = '<span class="spinner"></span> Starting session...';
+                inputStatus.className = 'input-status running';
+                sendBtn.classList.remove('hidden');
+                sendBtn.disabled = true;
+                interruptBtn.classList.add('hidden');
+                return;
+            }
 
             if (status.running) {
                 inputStatus.className = 'input-status running';
@@ -167,7 +179,16 @@
             const message = messageInput.value.trim();
             if (!message || !activeSessionId) return;
 
+            const session = sessions.get(activeSessionId);
+            if (!session) return;
+
             sendBtn.disabled = true;
+
+            // Check if this is a pending (not yet started) session
+            if (session.pending) {
+                await startPendingSession(session, message);
+                return;
+            }
 
             try {
                 const response = await fetch('/sessions/' + activeSessionId + '/send', {
@@ -186,6 +207,43 @@
             } catch (e) {
                 alert('Error: Failed to send message');
                 console.error('Send error:', e);
+            }
+
+            updateInputBarUI();
+        }
+
+        async function startPendingSession(pendingSession, message) {
+            // Show loading state
+            inputStatus.innerHTML = '<span class="spinner"></span> Starting session...';
+            inputStatus.className = 'input-status running';
+
+            try {
+                const response = await fetch('/sessions/new', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        cwd: pendingSession.cwd || null
+                    })
+                });
+
+                if (response.ok) {
+                    messageInput.value = '';
+                    autoResizeTextarea();
+                    // Mark this pending session as "starting" so we can merge it later
+                    pendingSession.starting = true;
+                    pendingSession.startedAt = Date.now();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.detail || 'Failed to start session'));
+                    inputStatus.textContent = '';
+                    inputStatus.className = 'input-status';
+                }
+            } catch (e) {
+                alert('Error: Failed to start session');
+                console.error('New session error:', e);
+                inputStatus.textContent = '';
+                inputStatus.className = 'input-status';
             }
 
             updateInputBarUI();
@@ -231,37 +289,39 @@
         sendBtn.addEventListener('click', sendMessage);
         interruptBtn.addEventListener('click', interruptSession);
 
-        // New session functionality
-        async function startNewSession() {
-            newSessionBtn.disabled = true;
-            try {
-                // Get cwd from active session if available
-                const activeSession = activeSessionId ? sessions.get(activeSessionId) : null;
-                const body = {};
-                if (activeSession && activeSession.name) {
-                    body.from_session = activeSessionId;
-                }
+        // New session functionality - creates a pending tab (Claude not started yet)
+        function createPendingSession() {
+            pendingSessionCounter++;
+            const pendingId = 'pending-' + pendingSessionCounter;
 
-                const response = await fetch('/sessions/new', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-
-                if (!response.ok) {
-                    const data = await response.json();
-                    alert('Error: ' + (data.detail || 'Failed to start new session'));
+            // Get cwd from active session if available
+            let cwd = null;
+            if (activeSessionId) {
+                const activeSession = sessions.get(activeSessionId);
+                if (activeSession && activeSession.cwd) {
+                    cwd = activeSession.cwd;
                 }
-                // Session will appear via SSE when it's created
-            } catch (e) {
-                alert('Error: Failed to start new session');
-                console.error('New session error:', e);
-            } finally {
-                newSessionBtn.disabled = false;
             }
+
+            // Create the pending session in the UI
+            const session = createSession(pendingId, 'New Session', null, null);
+            session.pending = true;
+            session.cwd = cwd;
+
+            // Add pending styling to the tab
+            session.tab.classList.add('pending');
+
+            // Show empty state in the container
+            session.container.innerHTML = '<div class="pending-session-placeholder">' +
+                '<p>Type a message below to start this Claude session</p>' +
+                '</div>';
+
+            // Switch to the new pending session
+            switchToSession(pendingId);
+            messageInput.focus();
         }
 
-        newSessionBtn.addEventListener('click', startNewSession);
+        newSessionBtn.addEventListener('click', createPendingSession);
 
         function updateStatus(status, text) {
             statusBar.className = 'status-bar ' + status;
@@ -540,10 +600,41 @@
 
             eventSource.addEventListener('session_added', function(e) {
                 const data = JSON.parse(e.data);
-                const session = createSession(data.id, data.name, data.startedAt, data.lastUpdatedAt);
-                // Auto-switch to newly added sessions (they're likely the active one)
-                if (autoFollow && session) {
-                    switchToSession(data.id, true);  // Scroll to bottom on auto-follow
+
+                // Check if we have a pending session that was starting - merge with it
+                let mergedPendingId = null;
+                const MERGE_WINDOW_MS = 30000;  // 30 seconds
+                sessions.forEach(function(session, sessionId) {
+                    if (session.pending && session.starting &&
+                        (Date.now() - session.startedAt) < MERGE_WINDOW_MS) {
+                        mergedPendingId = sessionId;
+                    }
+                });
+
+                if (mergedPendingId) {
+                    // Merge: remove the pending session, the real one takes its place
+                    const pendingSession = sessions.get(mergedPendingId);
+                    const wasPendingActive = (activeSessionId === mergedPendingId);
+
+                    // Remove the pending session
+                    pendingSession.container.remove();
+                    pendingSession.tab.remove();
+                    sessions.delete(mergedPendingId);
+
+                    // Create the real session
+                    const session = createSession(data.id, data.name, data.startedAt, data.lastUpdatedAt);
+
+                    // If the pending tab was active, switch to the real one
+                    if (wasPendingActive && session) {
+                        switchToSession(data.id, true);
+                    }
+                } else {
+                    // Normal case: just create the session
+                    const session = createSession(data.id, data.name, data.startedAt, data.lastUpdatedAt);
+                    // Auto-switch to newly added sessions (they're likely the active one)
+                    if (autoFollow && session) {
+                        switchToSession(data.id, true);  // Scroll to bottom on auto-follow
+                    }
                 }
             });
 

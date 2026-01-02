@@ -265,6 +265,29 @@ class TestSendFeature:
         assert response.status_code == 409
         assert "no process running" in response.json()["detail"].lower()
 
+    def test_new_session_returns_403_when_disabled(self):
+        """Test that new session returns 403 when feature is disabled."""
+        client = TestClient(app)
+
+        response = client.post(
+            "/sessions/new",
+            json={"message": "Hello"}
+        )
+        assert response.status_code == 403
+        assert "disabled" in response.json()["detail"].lower()
+
+    def test_new_session_returns_400_for_empty_message(self):
+        """Test that new session returns 400 for empty message."""
+        server.set_send_enabled(True)
+        client = TestClient(app)
+
+        response = client.post(
+            "/sessions/new",
+            json={"message": "   "}
+        )
+        assert response.status_code == 400
+        assert "empty" in response.json()["detail"].lower()
+
 
 # Note: SSE endpoint streaming tests are skipped because TestClient
 # doesn't handle SSE event generators well. The endpoint is tested

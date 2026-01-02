@@ -57,7 +57,8 @@ class SendMessageRequest(BaseModel):
 
 class NewSessionRequest(BaseModel):
     """Request body for starting a new session."""
-    from_session: str | None = None
+    message: str  # Initial message to send (required)
+    cwd: str | None = None  # Working directory (optional)
 
 
 def get_working_dir_from_session(session_path: Path) -> Path | None:
@@ -627,22 +628,33 @@ async def interrupt_session(session_id: str) -> dict:
 
 @app.post("/sessions/new")
 async def create_new_session(request: NewSessionRequest) -> dict:
-    """Start a new Claude session."""
+    """Start a new Claude session with an initial message."""
     if not _send_enabled:
         raise HTTPException(
             status_code=403,
             detail="Send feature is disabled. Start server with --enable-send to enable.",
         )
 
+    # Check if Claude CLI is available
+    if shutil.which("claude") is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code",
+        )
+
+    message = request.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
     # Determine working directory
     cwd: Path | None = None
-    if request.from_session:
-        info = _sessions.get(request.from_session)
-        if info:
-            cwd = get_working_dir_from_session(info.path)
+    if request.cwd:
+        potential_cwd = Path(request.cwd)
+        if potential_cwd.is_dir():
+            cwd = potential_cwd
 
-    # Build command
-    cmd_args = ["claude"]
+    # Build command with the initial message
+    cmd_args = ["claude", "-p", message]
     if _skip_permissions:
         cmd_args.append("--dangerously-skip-permissions")
 
@@ -651,7 +663,6 @@ async def create_new_session(request: NewSessionRequest) -> dict:
         proc = await asyncio.create_subprocess_exec(
             *cmd_args,
             cwd=cwd,
-            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -667,7 +678,9 @@ async def create_new_session(request: NewSessionRequest) -> dict:
         return {"status": "started", "cwd": str(cwd) if cwd else None}
 
     except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="Claude CLI not found")
+        raise HTTPException(status_code=503, detail="Claude CLI not found")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting new session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
