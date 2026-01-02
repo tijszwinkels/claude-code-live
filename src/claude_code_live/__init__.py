@@ -54,6 +54,11 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Enable sending messages to Claude Code sessions (security: allows command execution)",
 )
+@click.option(
+    "--dangerously-skip-permissions",
+    is_flag=True,
+    help="Pass --dangerously-skip-permissions to Claude CLI (skips permission prompts)",
+)
 def main(
     session: Path | None,
     port: int,
@@ -62,6 +67,7 @@ def main(
     debug: bool,
     max_sessions: int,
     enable_send: bool,
+    dangerously_skip_permissions: bool,
 ) -> None:
     """Start a live-updating transcript viewer for Claude Code sessions.
 
@@ -82,9 +88,12 @@ def main(
     from . import server
     server.MAX_SESSIONS = max_sessions
     server.set_send_enabled(enable_send)
+    server.set_skip_permissions(dangerously_skip_permissions)
 
     if enable_send:
         click.echo("Send feature ENABLED - messages can be sent to Claude Code sessions")
+    if dangerously_skip_permissions:
+        click.echo("WARNING: --dangerously-skip-permissions enabled - Claude will skip permission prompts")
 
     # If a specific session is provided, add it first
     if session is not None:

@@ -30,12 +30,19 @@ logger = logging.getLogger(__name__)
 MAX_SESSIONS = 10
 CATCHUP_TIMEOUT = 30  # seconds - max time for catchup before telling client to reinitialize
 _send_enabled = False  # Enable with --enable-send CLI flag
+_skip_permissions = False  # Enable with --dangerously-skip-permissions CLI flag
 
 
 def set_send_enabled(enabled: bool) -> None:
     """Set whether sending messages to Claude is enabled."""
     global _send_enabled
     _send_enabled = enabled
+
+
+def set_skip_permissions(enabled: bool) -> None:
+    """Set whether to skip permission prompts when running Claude."""
+    global _skip_permissions
+    _skip_permissions = enabled
 
 
 def is_send_enabled() -> bool:
@@ -244,10 +251,13 @@ async def run_claude_for_session(session_id: str, message: str) -> None:
         return
 
     try:
+        # Build command arguments
+        cmd_args = ["claude", "-p", message, "--resume", session_id]
+        if _skip_permissions:
+            cmd_args.append("--dangerously-skip-permissions")
+
         proc = await asyncio.create_subprocess_exec(
-            "claude",
-            "-p", message,
-            "--resume", session_id,
+            *cmd_args,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
