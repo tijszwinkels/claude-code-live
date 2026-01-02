@@ -344,16 +344,14 @@
                 // Reorder tabs based on file modification times
                 reorderTabs();
                 updateStatus('', 'Connected');
+            });
 
-                // Mark catchup as complete after a short delay
-                // (allows initial message burst to finish without triggering auto-follow)
-                setTimeout(function() {
-                    catchupComplete = true;
-                    // Scroll the active session to bottom after catchup
-                    if (activeSessionId) {
-                        window.scrollTo(0, document.body.scrollHeight);
-                    }
-                }, 500);
+            eventSource.addEventListener('catchup_complete', function(e) {
+                catchupComplete = true;
+                // Scroll the active session to bottom after catchup
+                if (activeSessionId) {
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
             });
 
             eventSource.addEventListener('session_added', function(e) {

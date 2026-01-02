@@ -334,6 +334,9 @@ async def event_generator(request: Request) -> AsyncGenerator[dict, None]:
                         }),
                     }
 
+        # Signal catchup complete
+        yield {"event": "catchup_complete", "data": "{}"}
+
         # Stream new events
         ping_interval = 30  # seconds
 
