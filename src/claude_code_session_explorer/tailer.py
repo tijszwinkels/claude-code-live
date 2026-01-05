@@ -375,3 +375,55 @@ def find_most_recent_session(projects_dir: Path | None = None) -> Path | None:
     """
     sessions = find_recent_sessions(projects_dir, limit=1)
     return sessions[0] if sessions else None
+
+
+def get_session_token_usage(session_path: Path) -> dict:
+    """Calculate total token usage from a session file.
+
+    Reads all assistant messages and sums up their usage fields.
+
+    Args:
+        session_path: Path to the session JSONL file
+
+    Returns:
+        Dictionary with token usage totals:
+        - input_tokens: Total non-cached input tokens
+        - output_tokens: Total output tokens
+        - cache_creation_tokens: Total tokens written to cache
+        - cache_read_tokens: Total tokens read from cache
+        - message_count: Number of assistant messages
+    """
+    totals = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "message_count": 0,
+    }
+
+    try:
+        with open(session_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("type") == "assistant":
+                        usage = entry.get("message", {}).get("usage", {})
+                        if usage:
+                            totals["input_tokens"] += usage.get("input_tokens", 0)
+                            totals["output_tokens"] += usage.get("output_tokens", 0)
+                            totals["cache_creation_tokens"] += usage.get(
+                                "cache_creation_input_tokens", 0
+                            )
+                            totals["cache_read_tokens"] += usage.get(
+                                "cache_read_input_tokens", 0
+                            )
+                            totals["message_count"] += 1
+                except json.JSONDecodeError:
+                    continue
+    except (FileNotFoundError, IOError):
+        pass
+
+    return totals

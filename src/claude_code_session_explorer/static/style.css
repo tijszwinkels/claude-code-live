@@ -155,6 +155,15 @@ pre code { background: none; padding: 0; }
 .session-tooltip .tooltip-value { margin-bottom: 8px; word-wrap: break-word; }
 .session-tooltip .tooltip-value:last-child { margin-bottom: 0; }
 .session-tooltip .tooltip-message { max-height: 150px; overflow-y: auto; white-space: pre-wrap; }
+.session-tooltip .tooltip-usage { display: flex; flex-wrap: wrap; gap: 8px; font-family: monospace; font-size: 0.75rem; }
+.session-tooltip .usage-item { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+
+/* Message tooltip for token usage */
+.message-tooltip { position: fixed; background: var(--code-bg); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.75rem; z-index: 1100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none; display: none; font-family: monospace; }
+.message-tooltip .usage-row { display: flex; gap: 12px; }
+.message-tooltip .usage-item { white-space: nowrap; }
+.message-tooltip .usage-label { color: var(--text-muted); margin-right: 4px; }
+.message.assistant .message-header { cursor: help; }
 
 /* Session header */
 .session-header { position: sticky; top: 0; background: var(--bg-color); padding: 8px 16px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; z-index: 10; margin: -16px -16px 16px -16px; }

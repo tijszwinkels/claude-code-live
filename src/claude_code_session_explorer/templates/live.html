@@ -64,6 +64,9 @@
     <!-- Session tooltip (hidden, shown on hover) -->
     <div class="session-tooltip" id="session-tooltip" style="display: none;"></div>
 
+    <!-- Message tooltip for token usage (hidden, shown on hover) -->
+    <div class="message-tooltip" id="message-tooltip"></div>
+
     <!-- Floating controls -->
     <div class="floating-controls" id="floating-controls">
         <button class="scroll-btn" id="scroll-top-btn" title="Scroll to top">&#8593;</button>
@@ -96,6 +99,7 @@
         const interruptBtn = document.getElementById('interrupt-btn');
         const newSessionBtn = document.getElementById('new-session-btn');
         const sessionTooltip = document.getElementById('session-tooltip');
+        const messageTooltip = document.getElementById('message-tooltip');
         const scrollTopBtn = document.getElementById('scroll-top-btn');
         const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
         const autoScrollCheckbox = document.getElementById('auto-scroll-checkbox');
@@ -437,7 +441,7 @@
             }
 
             const displayProjectName = projectName || 'New Session';
-            const session = createSession(pendingId, 'New Session', displayProjectName, null, null, null, cwd);
+            const session = createSession(pendingId, 'New Session', displayProjectName, null, null, null, cwd, null);
             session.pending = true;
             session.cwd = cwd;
 
@@ -532,6 +536,81 @@
                     });
                 }
             });
+
+            // Add tooltip handlers for assistant messages with usage data
+            // Check both the element itself and its descendants
+            const assistantMessages = [];
+            if (element.matches && element.matches('.message.assistant[data-usage-input]')) {
+                assistantMessages.push(element);
+            }
+            element.querySelectorAll('.message.assistant[data-usage-input]').forEach(function(msg) {
+                assistantMessages.push(msg);
+            });
+            assistantMessages.forEach(function(msg) {
+                const header = msg.querySelector('.message-header');
+                if (header) {
+                    header.addEventListener('mouseenter', function(e) {
+                        showMessageTooltip(msg, e);
+                    });
+                    header.addEventListener('mouseleave', hideMessageTooltip);
+                    header.addEventListener('mousemove', function(e) {
+                        positionMessageTooltip(e);
+                    });
+                }
+            });
+        }
+
+        let messageTooltipTimeout = null;
+
+        function showMessageTooltip(msgEl, e) {
+            if (messageTooltipTimeout) clearTimeout(messageTooltipTimeout);
+
+            messageTooltipTimeout = setTimeout(function() {
+                const input = parseInt(msgEl.dataset.usageInput) || 0;
+                const output = parseInt(msgEl.dataset.usageOutput) || 0;
+                const cacheCreate = parseInt(msgEl.dataset.usageCacheCreate) || 0;
+                const cacheRead = parseInt(msgEl.dataset.usageCacheRead) || 0;
+
+                messageTooltip.innerHTML = `
+                    <div class="usage-row">
+                        <span class="usage-item"><span class="usage-label">In:</span>${formatTokenCount(input)}</span>
+                        <span class="usage-item"><span class="usage-label">Out:</span>${formatTokenCount(output)}</span>
+                        <span class="usage-item"><span class="usage-label">Cache↑:</span>${formatTokenCount(cacheCreate)}</span>
+                        <span class="usage-item"><span class="usage-label">Cache↓:</span>${formatTokenCount(cacheRead)}</span>
+                    </div>
+                `;
+                // Position first with visibility hidden to measure, then show
+                messageTooltip.style.visibility = 'hidden';
+                messageTooltip.style.display = 'block';
+                positionMessageTooltip(e);
+                messageTooltip.style.visibility = 'visible';
+            }, 200);
+        }
+
+        function positionMessageTooltip(e) {
+            const padding = 10;
+            let left = e.clientX + padding;
+            let top = e.clientY + padding;
+
+            // Get dimensions after rendering
+            const rect = messageTooltip.getBoundingClientRect();
+            if (rect.width > 0 && left + rect.width > window.innerWidth) {
+                left = e.clientX - rect.width - padding;
+            }
+            if (rect.height > 0 && top + rect.height > window.innerHeight) {
+                top = e.clientY - rect.height - padding;
+            }
+
+            messageTooltip.style.left = left + 'px';
+            messageTooltip.style.top = top + 'px';
+        }
+
+        function hideMessageTooltip() {
+            if (messageTooltipTimeout) {
+                clearTimeout(messageTooltipTimeout);
+                messageTooltipTimeout = null;
+            }
+            messageTooltip.style.display = 'none';
         }
 
         function formatTimestamp(ts) {
@@ -606,7 +685,7 @@
             return project;
         }
 
-        function createSession(sessionId, name, projectName, firstMessage, startedAt, lastUpdatedAt, projectPath) {
+        function createSession(sessionId, name, projectName, firstMessage, startedAt, lastUpdatedAt, projectPath, tokenUsage) {
             if (sessions.has(sessionId)) return sessions.get(sessionId);
 
             // Create container with session header
@@ -673,7 +752,8 @@
                 lastActivity: lastUpdatedAt ? lastUpdatedAt * 1000 : Date.now(),
                 startedAt: startedAt || null,
                 lastUpdatedAt: lastUpdatedAt || null,
-                cwd: projectPath || null
+                cwd: projectPath || null,
+                tokenUsage: tokenUsage || null
             };
             sessions.set(sessionId, session);
 
@@ -688,6 +768,16 @@
             return session;
         }
 
+        function formatTokenCount(count) {
+            if (!count || count === 0) return '0';
+            if (count >= 1000000) {
+                return (count / 1000000).toFixed(1) + 'M';
+            } else if (count >= 1000) {
+                return (count / 1000).toFixed(1) + 'K';
+            }
+            return count.toString();
+        }
+
         function showTooltip(sessionId, e) {
             const session = sessions.get(sessionId);
             if (!session) return;
@@ -699,11 +789,26 @@
                 const updated = formatTimestamp(session.lastUpdatedAt);
                 const fullMessage = session.firstMessage || 'No message';
 
+                let usageHtml = '';
+                if (session.tokenUsage && session.tokenUsage.message_count > 0) {
+                    const u = session.tokenUsage;
+                    usageHtml = `
+                        <div class="tooltip-label">Token Usage</div>
+                        <div class="tooltip-value tooltip-usage">
+                            <span class="usage-item">In: ${formatTokenCount(u.input_tokens)}</span>
+                            <span class="usage-item">Out: ${formatTokenCount(u.output_tokens)}</span>
+                            <span class="usage-item">Cache↑: ${formatTokenCount(u.cache_creation_tokens)}</span>
+                            <span class="usage-item">Cache↓: ${formatTokenCount(u.cache_read_tokens)}</span>
+                        </div>
+                    `;
+                }
+
                 sessionTooltip.innerHTML = `
                     <div class="tooltip-label">Created</div>
                     <div class="tooltip-value">${escapeHtml(started)}</div>
                     <div class="tooltip-label">Last updated</div>
                     <div class="tooltip-value">${escapeHtml(updated)}</div>
+                    ${usageHtml}
                     <div class="tooltip-label">First message</div>
                     <div class="tooltip-value tooltip-message">${escapeHtml(fullMessage)}</div>
                 `;
@@ -1039,7 +1144,8 @@
                         session.firstMessage,
                         session.startedAt,
                         session.lastUpdatedAt,
-                        session.projectPath
+                        session.projectPath,
+                        session.tokenUsage
                     );
                 });
                 reorderSidebar();
@@ -1078,7 +1184,8 @@
                         data.firstMessage,
                         data.startedAt,
                         data.lastUpdatedAt,
-                        data.projectPath
+                        data.projectPath,
+                        data.tokenUsage
                     );
 
                     if (wasPendingActive && session) {
@@ -1092,7 +1199,8 @@
                         data.firstMessage,
                         data.startedAt,
                         data.lastUpdatedAt,
-                        data.projectPath
+                        data.projectPath,
+                        data.tokenUsage
                     );
                     if (autoSwitch && session) {
                         switchToSession(data.id, true);
@@ -1109,7 +1217,7 @@
                 const data = JSON.parse(e.data);
                 if (data.type === 'html' && data.session_id) {
                     if (!sessions.has(data.session_id)) {
-                        createSession(data.session_id, data.session_id.substring(0, 8), 'Unknown', null, null, null, null);
+                        createSession(data.session_id, data.session_id.substring(0, 8), 'Unknown', null, null, null, null, null);
                     }
                     appendMessage(data.session_id, data.content);
                 }
