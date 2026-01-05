@@ -137,13 +137,23 @@ async def run_claude_for_session(session_id: str, message: str) -> None:
         return
 
     try:
+        # Ensure session is in Claude's session index so --resume works.
+        # Claude uses ~/.claude/session-env/<session-id>/ directories as its index.
+        # Sessions created externally (via -p mode) don't get indexed automatically.
+        session_env_dir = Path.home() / ".claude" / "session-env" / session_id
+        session_env_dir.mkdir(parents=True, exist_ok=True)
+
         # Build command arguments
         cmd_args = ["claude", "-p", message, "--resume", session_id]
         if _skip_permissions:
             cmd_args.append("--dangerously-skip-permissions")
 
+        # Determine working directory from session info
+        cwd = info.project_path if info.project_path and Path(info.project_path).is_dir() else None
+
         proc = await asyncio.create_subprocess_exec(
             *cmd_args,
+            cwd=cwd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
