@@ -61,30 +61,6 @@ class NewSessionRequest(BaseModel):
     cwd: str | None = None  # Working directory (optional)
 
 
-def get_working_dir_from_session(session_path: Path) -> Path | None:
-    """Extract the working directory from a session path.
-
-    Session paths look like:
-    ~/.claude/projects/-Users-tijs-projects-claude-code-live/abc123.jsonl
-
-    The folder name uses dashes for path separators.
-    """
-    import urllib.parse
-
-    folder = session_path.parent.name
-    folder = urllib.parse.unquote(folder)
-
-    # Convert dash-separated path back to real path
-    # The path starts with a dash (e.g., "-Users-..." -> "/Users/...")
-    if folder.startswith("-"):
-        potential_path = folder.replace("-", "/")
-        path = Path(potential_path)
-        if path.exists() and path.is_dir():
-            return path
-
-    return None
-
-
 @dataclass
 class SessionInfo:
     """Information about a tracked session."""
