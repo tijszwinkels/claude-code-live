@@ -13,7 +13,7 @@
             <span class="status-dot"></span>
             <span id="status-text">Connecting...</span>
         </div>
-        <div id="session-info">last 10 sessions</div>
+        <div class="session-title-bar" id="session-title-bar"></div>
     </div>
 
     <!-- Sidebar -->
@@ -64,6 +64,16 @@
     <!-- Session tooltip (hidden, shown on hover) -->
     <div class="session-tooltip" id="session-tooltip" style="display: none;"></div>
 
+    <!-- Floating controls -->
+    <div class="floating-controls" id="floating-controls">
+        <button class="scroll-btn" id="scroll-top-btn" title="Scroll to top">&#8593;</button>
+        <label class="auto-scroll-float" id="auto-scroll-float">
+            <input type="checkbox" id="auto-scroll-checkbox" checked>
+            <span>Auto</span>
+        </label>
+        <button class="scroll-btn" id="scroll-bottom-btn" title="Scroll to bottom">&#8595;</button>
+    </div>
+
     <script>
     (function() {
         // DOM elements
@@ -71,7 +81,7 @@
         const projectListContainer = document.getElementById('project-list');
         const statusBar = document.getElementById('status-bar');
         const statusText = document.getElementById('status-text');
-        const sessionInfo = document.getElementById('session-info');
+        const sessionTitleBar = document.getElementById('session-title-bar');
         const sidebar = document.getElementById('sidebar');
         const sidebarOverlay = document.getElementById('sidebar-overlay');
         const hamburgerBtn = document.getElementById('hamburger-btn');
@@ -86,6 +96,10 @@
         const interruptBtn = document.getElementById('interrupt-btn');
         const newSessionBtn = document.getElementById('new-session-btn');
         const sessionTooltip = document.getElementById('session-tooltip');
+        const scrollTopBtn = document.getElementById('scroll-top-btn');
+        const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+        const autoScrollCheckbox = document.getElementById('auto-scroll-checkbox');
+        const autoScrollFloat = document.getElementById('auto-scroll-float');
 
         let eventSource = null;
         const MAX_MESSAGES = 500;
@@ -165,6 +179,28 @@
         autoSwitchCheckbox.checked = autoSwitch;
         autoSwitchCheckbox.addEventListener('change', updateAutoSwitchUI);
         updateAutoSwitchUI();
+
+        // Auto-scroll UI (floating controls)
+        function updateAutoScrollUI() {
+            autoScroll = autoScrollCheckbox.checked;
+            if (autoScroll) {
+                autoScrollFloat.classList.add('active');
+            } else {
+                autoScrollFloat.classList.remove('active');
+            }
+            localStorage.setItem('autoScroll', autoScroll);
+        }
+        autoScrollCheckbox.checked = autoScroll;
+        autoScrollCheckbox.addEventListener('change', updateAutoScrollUI);
+        updateAutoScrollUI();
+
+        // Scroll buttons
+        scrollTopBtn.addEventListener('click', function() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+        scrollBottomBtn.addEventListener('click', function() {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        });
 
         // Search functionality
         function filterSidebar(query) {
@@ -535,29 +571,11 @@
 
             const displayTitle = truncateTitle(firstMessage || name, MAX_TITLE_LENGTH);
 
-            // Add session header with auto-scroll control
+            // Add session header (title only - auto-scroll is in floating controls)
             const sessionHeader = document.createElement('div');
             sessionHeader.className = 'session-header';
-            sessionHeader.innerHTML = `
-                <span class="session-title-display">${escapeHtml(displayTitle)}</span>
-                <label class="auto-scroll${autoScroll ? ' active' : ''}">
-                    <input type="checkbox" ${autoScroll ? 'checked' : ''}>
-                    <span>Auto-scroll</span>
-                </label>
-            `;
+            sessionHeader.innerHTML = `<span class="session-title-display">${escapeHtml(displayTitle)}</span>`;
             container.appendChild(sessionHeader);
-
-            const autoScrollCheckbox = sessionHeader.querySelector('input');
-            const autoScrollLabel = sessionHeader.querySelector('.auto-scroll');
-            autoScrollCheckbox.addEventListener('change', function() {
-                autoScroll = this.checked;
-                if (autoScroll) {
-                    autoScrollLabel.classList.add('active');
-                } else {
-                    autoScrollLabel.classList.remove('active');
-                }
-                localStorage.setItem('autoScroll', autoScroll);
-            });
 
             sessionsContainer.appendChild(container);
 
@@ -735,6 +753,9 @@
             session.container.classList.add('active');
             session.sidebarItem.classList.add('active');
             activeSessionId = sessionId;
+
+            // Update header title
+            sessionTitleBar.textContent = session.displayTitle || session.name;
 
             updateInputBarUI();
 
