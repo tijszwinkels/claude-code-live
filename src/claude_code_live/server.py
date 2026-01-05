@@ -256,6 +256,19 @@ async def broadcast_session_added(info: SessionInfo) -> None:
     await broadcast_event("session_added", info.to_dict())
 
 
+async def broadcast_session_catchup(info: SessionInfo) -> None:
+    """Broadcast existing messages for a newly added session.
+
+    When a session is added while clients are already connected, those clients
+    need to receive the existing messages (catchup) for that session.
+    """
+    existing = info.tailer.read_all()
+    for entry in existing:
+        html = render_message(entry)
+        if html:
+            await broadcast_message(info.session_id, html)
+
+
 async def broadcast_session_removed(session_id: str) -> None:
     """Broadcast that a session was removed."""
     await broadcast_event("session_removed", {"id": session_id})
@@ -345,6 +358,7 @@ async def check_for_new_sessions() -> None:
                     await broadcast_session_removed(evicted_id)
                 if info:
                     await broadcast_session_added(info)
+                    await broadcast_session_catchup(info)
 
 
 async def watch_loop() -> None:
@@ -376,6 +390,7 @@ async def watch_loop() -> None:
                             await broadcast_session_removed(evicted_id)
                         if info:
                             await broadcast_session_added(info)
+                            await broadcast_session_catchup(info)
 
                     elif change_type == watchfiles.Change.modified:
                         # Existing file modified
@@ -389,6 +404,7 @@ async def watch_loop() -> None:
                                 await broadcast_session_removed(evicted_id)
                             if info:
                                 await broadcast_session_added(info)
+                                await broadcast_session_catchup(info)
 
     except asyncio.CancelledError:
         logger.info("Watch loop cancelled")
