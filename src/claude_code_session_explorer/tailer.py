@@ -7,8 +7,78 @@ from pathlib import Path
 from typing import AsyncGenerator, Callable
 
 import watchfiles
+import yaml
 
 logger = logging.getLogger(__name__)
+
+# Load pricing data
+_pricing_data: dict | None = None
+
+
+def _get_pricing_data() -> dict:
+    """Load and cache pricing data from YAML file."""
+    global _pricing_data
+    if _pricing_data is None:
+        pricing_path = Path(__file__).parent / "pricing.yaml"
+        with open(pricing_path, "r") as f:
+            _pricing_data = yaml.safe_load(f)
+    return _pricing_data
+
+
+def get_model_pricing(model: str) -> dict:
+    """Get pricing for a model, falling back to default if not found.
+
+    Args:
+        model: Model ID (e.g., 'claude-opus-4-5-20251101')
+
+    Returns:
+        Dictionary with pricing fields: input, output, cache_write_5m,
+        cache_write_1h, cache_read (all per million tokens)
+    """
+    pricing_data = _get_pricing_data()
+    models = pricing_data.get("models", {})
+    return models.get(model, pricing_data.get("default", {}))
+
+
+def calculate_message_cost(usage: dict, model: str | None = None) -> float:
+    """Calculate the cost in USD for a message's token usage.
+
+    Args:
+        usage: Token usage dictionary from message.usage
+        model: Optional model ID for model-specific pricing
+
+    Returns:
+        Cost in USD
+    """
+    if not usage:
+        return 0.0
+
+    pricing = get_model_pricing(model) if model else _get_pricing_data().get("default", {})
+
+    input_tokens = usage.get("input_tokens", 0)
+    output_tokens = usage.get("output_tokens", 0)
+    cache_read_tokens = usage.get("cache_read_input_tokens", 0)
+
+    # Get detailed cache write breakdown if available
+    cache_creation = usage.get("cache_creation", {})
+    cache_5m_tokens = cache_creation.get("ephemeral_5m_input_tokens", 0)
+    cache_1h_tokens = cache_creation.get("ephemeral_1h_input_tokens", 0)
+
+    # Fall back to total cache creation tokens if no breakdown
+    total_cache_create = usage.get("cache_creation_input_tokens", 0)
+    if cache_5m_tokens == 0 and cache_1h_tokens == 0 and total_cache_create > 0:
+        # Assume 5m cache if no breakdown available
+        cache_5m_tokens = total_cache_create
+
+    # Calculate cost (prices are per million tokens)
+    cost = 0.0
+    cost += (input_tokens / 1_000_000) * pricing.get("input", 0)
+    cost += (output_tokens / 1_000_000) * pricing.get("output", 0)
+    cost += (cache_5m_tokens / 1_000_000) * pricing.get("cache_write_5m", 0)
+    cost += (cache_1h_tokens / 1_000_000) * pricing.get("cache_write_1h", 0)
+    cost += (cache_read_tokens / 1_000_000) * pricing.get("cache_read", 0)
+
+    return cost
 
 
 def get_session_name(session_path: Path) -> tuple[str, str]:
@@ -378,7 +448,7 @@ def find_most_recent_session(projects_dir: Path | None = None) -> Path | None:
 
 
 def get_session_token_usage(session_path: Path) -> dict:
-    """Calculate total token usage from a session file.
+    """Calculate total token usage and cost from a session file.
 
     Reads all assistant messages and sums up their usage fields.
 
@@ -392,6 +462,7 @@ def get_session_token_usage(session_path: Path) -> dict:
         - cache_creation_tokens: Total tokens written to cache
         - cache_read_tokens: Total tokens read from cache
         - message_count: Number of assistant messages
+        - cost: Total cost in USD
     """
     totals = {
         "input_tokens": 0,
@@ -399,6 +470,7 @@ def get_session_token_usage(session_path: Path) -> dict:
         "cache_creation_tokens": 0,
         "cache_read_tokens": 0,
         "message_count": 0,
+        "cost": 0.0,
     }
 
     try:
@@ -410,7 +482,9 @@ def get_session_token_usage(session_path: Path) -> dict:
                 try:
                     entry = json.loads(line)
                     if entry.get("type") == "assistant":
-                        usage = entry.get("message", {}).get("usage", {})
+                        message = entry.get("message", {})
+                        usage = message.get("usage", {})
+                        model = message.get("model")
                         if usage:
                             totals["input_tokens"] += usage.get("input_tokens", 0)
                             totals["output_tokens"] += usage.get("output_tokens", 0)
@@ -421,6 +495,7 @@ def get_session_token_usage(session_path: Path) -> dict:
                                 "cache_read_input_tokens", 0
                             )
                             totals["message_count"] += 1
+                            totals["cost"] += calculate_message_cost(usage, model)
                 except json.JSONDecodeError:
                     continue
     except (FileNotFoundError, IOError):

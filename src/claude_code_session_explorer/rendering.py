@@ -11,6 +11,8 @@ from importlib.resources import files
 from jinja2 import Environment, PackageLoader
 import markdown
 
+from .tailer import calculate_message_cost
+
 # Set up Jinja2 environment
 _jinja_env = Environment(
     loader=PackageLoader("claude_code_session_explorer", "templates"),
@@ -240,8 +242,12 @@ def render_message(entry: dict) -> str:
     elif log_type == "assistant":
         content_html = render_assistant_message(message_data)
         role_class, role_label = "assistant", "Assistant"
-        # Extract usage data for assistant messages
+        # Extract usage data for assistant messages and calculate cost
         usage = message_data.get("usage", {})
+        if usage:
+            model = message_data.get("model")
+            usage = dict(usage)  # Make a copy to avoid mutating the original
+            usage["cost"] = calculate_message_cost(usage, model)
     else:
         return ""
 

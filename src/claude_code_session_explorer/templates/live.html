@@ -600,6 +600,7 @@
                 const output = parseInt(msgEl.dataset.usageOutput) || 0;
                 const cacheCreate = parseInt(msgEl.dataset.usageCacheCreate) || 0;
                 const cacheRead = parseInt(msgEl.dataset.usageCacheRead) || 0;
+                const cost = parseFloat(msgEl.dataset.usageCost) || 0;
 
                 messageTooltip.innerHTML = `
                     <div class="usage-row">
@@ -607,6 +608,7 @@
                         <span class="usage-item"><span class="usage-label">Out:</span>${formatTokenCount(output)}</span>
                         <span class="usage-item"><span class="usage-label">Cache↑:</span>${formatTokenCount(cacheCreate)}</span>
                         <span class="usage-item"><span class="usage-label">Cache↓:</span>${formatTokenCount(cacheRead)}</span>
+                        <span class="usage-item"><span class="usage-label">Cost:</span>${formatCost(cost)}</span>
                     </div>
                 `;
                 // Position first with visibility hidden to measure, then show
@@ -855,6 +857,12 @@
             return count.toString();
         }
 
+        function formatCost(cost) {
+            if (!cost || cost === 0) return '$0.00';
+            if (cost < 0.01) return '<$0.01';
+            return '$' + cost.toFixed(2);
+        }
+
         function showTooltip(sessionId, e) {
             const session = sessions.get(sessionId);
             if (!session) return;
@@ -877,6 +885,8 @@
                             <span class="usage-item">Cache↑: ${formatTokenCount(u.cache_creation_tokens)}</span>
                             <span class="usage-item">Cache↓: ${formatTokenCount(u.cache_read_tokens)}</span>
                         </div>
+                        <div class="tooltip-label">Estimated Cost</div>
+                        <div class="tooltip-value tooltip-cost">${formatCost(u.cost)}</div>
                     `;
                 }
 
