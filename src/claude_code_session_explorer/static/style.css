@@ -137,6 +137,18 @@ pre code { background: none; padding: 0; }
 
 /* Session list */
 .session-list { padding-left: 16px; }
+
+/* Date sections within projects */
+.date-section { margin-bottom: 2px; }
+.date-section.empty { display: none; }
+.date-section.collapsed .date-session-list { display: none; }
+.date-divider { display: flex; align-items: center; padding: 4px 8px 2px 8px; cursor: pointer; user-select: none; }
+.date-divider::before { content: '— '; color: var(--user-border); opacity: 0.5; }
+.date-label { font-size: 0.7rem; color: var(--user-border); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; opacity: 0.7; white-space: nowrap; }
+.date-divider:hover .date-label { opacity: 1; }
+.date-section.collapsed .date-divider .date-label::after { content: ' ▸'; font-size: 0.65rem; }
+.date-session-list { }
+
 .session-item { display: flex; align-items: center; padding: 4px 12px; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; }
 .session-item:hover { background: rgba(0,0,0,0.04); color: var(--text-color); }
 .session-item.active { background: rgba(25, 118, 210, 0.08); color: var(--user-border); border-left-color: var(--user-border); font-weight: 500; }

@@ -129,6 +129,36 @@
             return window.innerWidth <= 768;
         }
 
+        // Date category helpers
+        function getDateCategory(timestamp) {
+            if (!timestamp) return 'older';
+            const date = typeof timestamp === 'number' ? new Date(timestamp * 1000) : new Date(timestamp);
+            if (isNaN(date.getTime())) return 'older';
+
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const lastWeek = new Date(today);
+            lastWeek.setDate(lastWeek.getDate() - 7);
+
+            const sessionDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+            if (sessionDate >= today) return 'today';
+            if (sessionDate >= yesterday) return 'yesterday';
+            if (sessionDate >= lastWeek) return 'lastWeek';
+            return 'older';
+        }
+
+        const dateCategoryLabels = {
+            today: 'Today',
+            yesterday: 'Yesterday',
+            lastWeek: 'Past 7 Days',
+            older: 'Older'
+        };
+
+        const dateCategoryOrder = ['today', 'yesterday', 'lastWeek', 'older'];
+
         // Sidebar toggle
         function updateSidebarState() {
             if (sidebarOpen) {
@@ -646,6 +676,21 @@
 
             const projectItem = document.createElement('div');
             projectItem.className = 'project-item';
+
+            // Build date sections HTML
+            let dateSectionsHtml = '';
+            dateCategoryOrder.forEach(function(category) {
+                const isOpen = category === 'today' || category === 'yesterday';
+                dateSectionsHtml += `
+                    <div class="date-section${isOpen ? '' : ' collapsed'}" data-category="${category}">
+                        <div class="date-divider">
+                            <span class="date-label">${dateCategoryLabels[category]}</span>
+                        </div>
+                        <div class="date-session-list"></div>
+                    </div>
+                `;
+            });
+
             projectItem.innerHTML = `
                 <div class="project-header">
                     <span class="project-icon">&#9660;</span>
@@ -653,7 +698,7 @@
                     <span class="project-name">${escapeHtml(projectName)}</span>
                     <button class="project-new-btn" title="New session in ${escapeHtml(projectName)}">+</button>
                 </div>
-                <div class="session-list"></div>
+                <div class="session-list">${dateSectionsHtml}</div>
             `;
 
             const projectHeader = projectItem.querySelector('.project-header');
@@ -663,6 +708,12 @@
                 // Don't toggle when clicking the new button
                 if (e.target === projectNewBtn) return;
                 projectItem.classList.toggle('collapsed');
+                // Track if user manually expanded, so we don't auto-collapse
+                if (!projectItem.classList.contains('collapsed')) {
+                    projectItem.classList.add('user-expanded');
+                } else {
+                    projectItem.classList.remove('user-expanded');
+                }
             });
 
             projectNewBtn.addEventListener('click', function(e) {
@@ -670,7 +721,26 @@
                 createPendingSession(projectPath || null, projectName);
             });
 
+            // Date section toggle handlers
+            projectItem.querySelectorAll('.date-divider').forEach(function(divider) {
+                divider.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const section = divider.parentElement;
+                    section.classList.toggle('collapsed');
+                });
+            });
+
             projectListContainer.appendChild(projectItem);
+
+            // Build dateSections map
+            const dateSections = {};
+            dateCategoryOrder.forEach(function(category) {
+                const section = projectItem.querySelector(`.date-section[data-category="${category}"]`);
+                dateSections[category] = {
+                    element: section,
+                    listElement: section.querySelector('.date-session-list')
+                };
+            });
 
             const project = {
                 name: projectName,
@@ -678,7 +748,8 @@
                 sessions: new Set(),
                 lastActivity: 0,
                 element: projectItem,
-                sessionListElement: projectItem.querySelector('.session-list')
+                sessionListElement: projectItem.querySelector('.session-list'),
+                dateSections: dateSections
             };
             projects.set(projectName, project);
 
@@ -735,10 +806,16 @@
                 positionTooltip(e);
             });
 
-            // Add to project
+            // Add to project in appropriate date section
             const project = getOrCreateProject(projectName || 'Unknown', projectPath);
             project.sessions.add(sessionId);
-            project.sessionListElement.appendChild(sidebarItem);
+
+            // Determine date category and add to correct section
+            const dateCategory = getDateCategory(lastUpdatedAt);
+            const dateSection = project.dateSections[dateCategory];
+            if (dateSection) {
+                dateSection.listElement.appendChild(sidebarItem);
+            }
 
             const session = {
                 id: sessionId,
@@ -892,15 +969,40 @@
             sortedProjects.forEach(function(project) {
                 projectListContainer.appendChild(project.element);
 
-                // Sort sessions within project
-                const sortedSessions = Array.from(project.sessions)
+                // Group sessions by date category
+                const sessionsByCategory = {};
+                dateCategoryOrder.forEach(function(cat) { sessionsByCategory[cat] = []; });
+
+                Array.from(project.sessions)
                     .map(id => sessions.get(id))
                     .filter(s => s)
-                    .sort((a, b) => b.lastActivity - a.lastActivity);
+                    .forEach(function(session) {
+                        const category = getDateCategory(session.lastUpdatedAt);
+                        sessionsByCategory[category].push(session);
+                    });
 
-                sortedSessions.forEach(function(session) {
-                    project.sessionListElement.appendChild(session.sidebarItem);
+                // Sort and place sessions within each date category
+                dateCategoryOrder.forEach(function(category) {
+                    const dateSection = project.dateSections[category];
+                    const categorySessions = sessionsByCategory[category]
+                        .sort((a, b) => b.lastActivity - a.lastActivity);
+
+                    // Show/hide date section based on whether it has sessions
+                    if (categorySessions.length === 0) {
+                        dateSection.element.classList.add('empty');
+                    } else {
+                        dateSection.element.classList.remove('empty');
+                        categorySessions.forEach(function(session) {
+                            dateSection.listElement.appendChild(session.sidebarItem);
+                        });
+                    }
                 });
+
+                // Collapse project if no sessions in "today"
+                const todaySessions = sessionsByCategory['today'];
+                if (todaySessions.length === 0 && !project.element.classList.contains('user-expanded')) {
+                    project.element.classList.add('collapsed');
+                }
             });
 
             // FLIP animation: animate from old to new positions
@@ -1149,7 +1251,9 @@
                     );
                 });
                 reorderSidebar();
-                updateStatus('', 'Connected');
+                const count = data.sessions.length;
+                const countText = count >= 100 ? 'last 100 sessions' : count + ' session' + (count !== 1 ? 's' : '');
+                updateStatus('', 'Connected (' + countText + ')');
             });
 
             eventSource.addEventListener('catchup_complete', function(e) {
