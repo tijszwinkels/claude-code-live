@@ -67,6 +67,12 @@ logger = logging.getLogger(__name__)
     hidden=True,
     help="Pass --dangerously-skip-permissions to Claude CLI (requires --experimental --enable-send)",
 )
+@click.option(
+    "--fork",
+    is_flag=True,
+    hidden=True,
+    help="Enable fork button to create new sessions from messages (requires --experimental --enable-send)",
+)
 def main(
     session: Path | None,
     port: int,
@@ -77,6 +83,7 @@ def main(
     experimental: bool,
     enable_send: bool,
     dangerously_skip_permissions: bool,
+    fork: bool,
 ) -> None:
     """Start a live-updating transcript viewer for Claude Code sessions.
 
@@ -103,11 +110,16 @@ def main(
         click.echo("Error: --dangerously-skip-permissions requires --enable-send", err=True)
         raise SystemExit(1)
 
+    if fork and not enable_send:
+        click.echo("Error: --fork requires --enable-send", err=True)
+        raise SystemExit(1)
+
     # Configure server
     from . import server
     server.MAX_SESSIONS = max_sessions
     server.set_send_enabled(enable_send)
     server.set_skip_permissions(dangerously_skip_permissions)
+    server.set_fork_enabled(fork)
 
     if enable_send:
         click.echo("⚠️  EXPERIMENTAL: Send feature enabled - messages can be sent to Claude Code sessions")

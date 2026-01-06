@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 CATCHUP_TIMEOUT = 30  # seconds - max time for catchup before telling client to reinitialize
 _send_enabled = False  # Enable with --enable-send CLI flag
 _skip_permissions = False  # Enable with --dangerously-skip-permissions CLI flag
+_fork_enabled = False  # Enable with --fork CLI flag
 
 # Global state for server (not session-related)
 _clients: set[asyncio.Queue] = set()
@@ -53,6 +54,12 @@ def set_skip_permissions(enabled: bool) -> None:
     """Set whether to skip permission prompts when running Claude."""
     global _skip_permissions
     _skip_permissions = enabled
+
+
+def set_fork_enabled(enabled: bool) -> None:
+    """Set whether the fork button is enabled."""
+    global _fork_enabled
+    _fork_enabled = enabled
 
 
 def is_send_enabled() -> bool:
@@ -411,6 +418,12 @@ async def health() -> dict:
 async def send_enabled() -> dict:
     """Check if sending messages is enabled."""
     return {"enabled": _send_enabled}
+
+
+@app.get("/fork-enabled")
+async def fork_enabled() -> dict:
+    """Check if fork button is enabled."""
+    return {"enabled": _fork_enabled}
 
 
 @app.get("/sessions/{session_id}/status")

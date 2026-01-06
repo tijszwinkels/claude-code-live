@@ -55,6 +55,9 @@
             <button class="send-btn" id="send-btn">
                 <span>Send</span>
             </button>
+            <button class="fork-btn hidden" id="fork-btn" title="Send message as a new forked session">
+                <span>Fork</span>
+            </button>
             <button class="interrupt-btn hidden" id="interrupt-btn">
                 <span>Stop</span>
             </button>
@@ -96,6 +99,7 @@
         const messageInput = document.getElementById('message-input');
         const inputStatus = document.getElementById('input-status');
         const sendBtn = document.getElementById('send-btn');
+        const forkBtn = document.getElementById('fork-btn');
         const interruptBtn = document.getElementById('interrupt-btn');
         const newSessionBtn = document.getElementById('new-session-btn');
         const sessionTooltip = document.getElementById('session-tooltip');
@@ -119,6 +123,7 @@
         let autoSwitchDebounce = null;
         let catchupComplete = false;
         let sendEnabled = false;
+        let forkEnabled = false;
         const sessionStatus = new Map();
         let pendingSessionCounter = 0;
         const pendingMessages = [];
@@ -292,9 +297,36 @@
             }
         }
 
+        async function checkForkEnabled() {
+            try {
+                const response = await fetch('/fork-enabled');
+                const data = await response.json();
+                forkEnabled = data.enabled;
+                updateForkButtonVisibility();
+            } catch (e) {
+                console.error('Failed to check fork-enabled:', e);
+                forkEnabled = false;
+            }
+        }
+
+        function updateForkButtonVisibility() {
+            // Only show fork button on desktop and when fork is enabled
+            if (forkEnabled && !isMobile()) {
+                forkBtn.classList.remove('hidden');
+            } else {
+                forkBtn.classList.add('hidden');
+            }
+        }
+
         function updateInputBarUI() {
+            const hasMessage = messageInput.value.trim();
+
+            // Update fork button visibility (desktop only, when enabled)
+            updateForkButtonVisibility();
+
             if (!activeSessionId) {
                 sendBtn.disabled = true;
+                forkBtn.disabled = true;
                 inputStatus.textContent = '';
                 inputStatus.className = 'input-status';
                 sendBtn.classList.remove('hidden');
@@ -310,6 +342,7 @@
                 inputStatus.className = 'input-status running';
                 sendBtn.classList.remove('hidden');
                 sendBtn.disabled = true;
+                forkBtn.disabled = true;
                 interruptBtn.classList.add('hidden');
                 return;
             }
@@ -318,6 +351,7 @@
                 inputStatus.className = 'input-status running';
                 sendBtn.classList.add('hidden');
                 interruptBtn.classList.remove('hidden');
+                forkBtn.disabled = !hasMessage;
 
                 if (status.queued_messages > 0) {
                     inputStatus.innerHTML = '<span class="spinner"></span> ' +
@@ -330,9 +364,10 @@
                 inputStatus.className = 'input-status';
                 sendBtn.classList.remove('hidden');
                 interruptBtn.classList.add('hidden');
+                forkBtn.disabled = !hasMessage;
             }
 
-            sendBtn.disabled = !messageInput.value.trim();
+            sendBtn.disabled = !hasMessage;
         }
 
         async function sendMessage() {
@@ -434,6 +469,54 @@
             }
         }
 
+        async function forkMessage() {
+            // Fork: create a new session with the message in the same project directory
+            const message = messageInput.value.trim();
+            if (!message || !activeSessionId) return;
+
+            const session = sessions.get(activeSessionId);
+            if (!session) return;
+
+            // Get the working directory from the current session
+            const cwd = session.cwd;
+            const projectName = session.projectName;
+
+            forkBtn.disabled = true;
+            inputStatus.innerHTML = '<span class="spinner"></span> Creating forked session...';
+            inputStatus.className = 'input-status running';
+
+            try {
+                const response = await fetch('/sessions/new', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        cwd: cwd || null
+                    })
+                });
+
+                if (response.ok) {
+                    messageInput.value = '';
+                    autoResizeTextarea();
+                    inputStatus.textContent = '';
+                    inputStatus.className = 'input-status';
+                    // The new session will appear via SSE and auto-switch will handle it
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.detail || 'Failed to create forked session'));
+                    inputStatus.textContent = '';
+                    inputStatus.className = 'input-status';
+                }
+            } catch (e) {
+                alert('Error: Failed to create forked session');
+                console.error('Fork error:', e);
+                inputStatus.textContent = '';
+                inputStatus.className = 'input-status';
+            }
+
+            updateInputBarUI();
+        }
+
         function autoResizeTextarea() {
             messageInput.style.height = 'auto';
             messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
@@ -454,6 +537,7 @@
         });
 
         sendBtn.addEventListener('click', sendMessage);
+        forkBtn.addEventListener('click', forkMessage);
         interruptBtn.addEventListener('click', interruptSession);
 
         // New session functionality
@@ -1339,6 +1423,7 @@
             catchupComplete = false;
 
             checkSendEnabled();
+            checkForkEnabled();
 
             eventSource = new EventSource('/events');
 
