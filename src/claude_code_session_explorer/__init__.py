@@ -1,4 +1,4 @@
-"""Claude Code Live - Live-updating transcript viewer for Claude Code sessions."""
+"""Claude Code Session Explorer - Live-updating transcript viewer for Claude Code sessions."""
 
 import logging
 import webbrowser
@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 @click.option(
     "--max-sessions",
     type=int,
-    default=10,
-    help="Maximum number of sessions to track (default: 10)",
+    default=100,
+    help="Maximum number of sessions to track (default: 100)",
 )
 @click.option(
     "--experimental",
