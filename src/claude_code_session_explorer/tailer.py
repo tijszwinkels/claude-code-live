@@ -451,6 +451,8 @@ def get_session_token_usage(session_path: Path) -> dict:
     """Calculate total token usage and cost from a session file.
 
     Reads all assistant messages and sums up their usage fields.
+    Deduplicates streaming messages by keeping only the final version
+    of each API request (identified by message_id:request_id).
 
     Args:
         session_path: Path to the session JSONL file
@@ -474,7 +476,11 @@ def get_session_token_usage(session_path: Path) -> dict:
         "cost": 0.0,
         "models": [],
     }
-    models_seen = set()
+    models_seen: set[str] = set()
+
+    # Store deduplicated messages: dedup_hash -> (usage, model, output_tokens)
+    # Keep the entry with highest output_tokens (the complete response)
+    dedup_messages: dict[str, tuple[dict, str | None, int]] = {}
 
     try:
         with open(session_path, "r", encoding="utf-8") as f:
@@ -488,23 +494,42 @@ def get_session_token_usage(session_path: Path) -> dict:
                         message = entry.get("message", {})
                         usage = message.get("usage", {})
                         model = message.get("model")
-                        if model and model not in models_seen:
-                            models_seen.add(model)
-                            totals["models"].append(model)
-                        if usage:
-                            totals["input_tokens"] += usage.get("input_tokens", 0)
-                            totals["output_tokens"] += usage.get("output_tokens", 0)
-                            totals["cache_creation_tokens"] += usage.get(
-                                "cache_creation_input_tokens", 0
-                            )
-                            totals["cache_read_tokens"] += usage.get(
-                                "cache_read_input_tokens", 0
-                            )
-                            totals["message_count"] += 1
-                            totals["cost"] += calculate_message_cost(usage, model)
+                        msg_id = message.get("id")
+                        request_id = entry.get("requestId")
+
+                        if not usage:
+                            continue
+
+                        output_tokens = usage.get("output_tokens", 0)
+
+                        # Deduplicate by message_id:request_id
+                        if msg_id and request_id:
+                            dedup_hash = f"{msg_id}:{request_id}"
+                            existing = dedup_messages.get(dedup_hash)
+                            # Keep the entry with highest output_tokens (complete response)
+                            if existing is None or output_tokens > existing[2]:
+                                dedup_messages[dedup_hash] = (usage, model, output_tokens)
+                        else:
+                            # No dedup info available, use a unique key
+                            unique_key = f"no_dedup_{len(dedup_messages)}"
+                            dedup_messages[unique_key] = (usage, model, output_tokens)
+
                 except json.JSONDecodeError:
                     continue
     except (FileNotFoundError, IOError):
         pass
+
+    # Sum up deduplicated messages
+    for usage, model, _ in dedup_messages.values():
+        if model and model not in models_seen:
+            models_seen.add(model)
+            totals["models"].append(model)
+
+        totals["input_tokens"] += usage.get("input_tokens", 0)
+        totals["output_tokens"] += usage.get("output_tokens", 0)
+        totals["cache_creation_tokens"] += usage.get("cache_creation_input_tokens", 0)
+        totals["cache_read_tokens"] += usage.get("cache_read_input_tokens", 0)
+        totals["message_count"] += 1
+        totals["cost"] += calculate_message_cost(usage, model)
 
     return totals
