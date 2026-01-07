@@ -300,6 +300,7 @@ async def run_cli_for_session(
         proc = await asyncio.create_subprocess_exec(
             *cmd_args,
             cwd=cwd,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -420,6 +421,11 @@ async def watch_loop() -> None:
 
     try:
         async for changes in watchfiles.awatch(*watch_dirs):
+            # Collect sessions to process and whether to check for new sessions
+            # This minimizes lock contention by batching operations
+            sessions_to_process: set[str] = set()
+            need_new_session_check = False
+
             for change_type, changed_path in changes:
                 changed_path = Path(changed_path)
 
@@ -435,28 +441,20 @@ async def watch_loop() -> None:
                     f"File change: {change_type.name} {changed_path.name} -> session {session_id}"
                 )
 
-                async with get_sessions_lock():
-                    if change_type == watchfiles.Change.added:
-                        # New file - could be a new session or new message/part
-                        if session_id and get_session(session_id) is not None:
-                            # Existing session got new file (OpenCode message/part)
-                            logger.debug(
-                                f"Processing new messages for session {session_id}"
-                            )
-                            await process_session_messages(session_id)
-                        else:
-                            # Might be a new session file - try to add it
-                            # For Claude Code: changed_path is the session file
-                            # For OpenCode: we need to discover the session file
-                            await check_for_new_sessions()
+                if session_id and get_session(session_id) is not None:
+                    # Known session - queue for message processing
+                    sessions_to_process.add(session_id)
+                else:
+                    # Unknown session - might be a new session file
+                    need_new_session_check = True
 
-                    elif change_type == watchfiles.Change.modified:
-                        # Existing file modified
-                        if session_id and get_session(session_id) is not None:
-                            await process_session_messages(session_id)
-                        else:
-                            # File we haven't seen - might be new session
-                            await check_for_new_sessions()
+            # Check for new sessions (needs lock, but only once per batch)
+            if need_new_session_check:
+                await check_for_new_sessions()
+
+            # Process messages for known sessions (doesn't need lock)
+            for session_id in sessions_to_process:
+                await process_session_messages(session_id)
 
     except asyncio.CancelledError:
         logger.info("Watch loop cancelled")
@@ -817,6 +815,7 @@ async def create_new_session(request: NewSessionRequest) -> dict:
         proc = await asyncio.create_subprocess_exec(
             *cmd_args,
             cwd=cwd,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
