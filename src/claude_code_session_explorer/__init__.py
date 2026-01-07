@@ -81,6 +81,13 @@ logger = logging.getLogger(__name__)
     hidden=True,
     help="Enable fork button to create new sessions from messages (requires --experimental --enable-send)",
 )
+@click.option(
+    "--default-send-backend",
+    type=click.Choice(list_backends()),
+    default=None,
+    hidden=True,
+    help="Default backend for new sessions (requires --experimental --enable-send)",
+)
 def main(
     session: Path | None,
     port: int,
@@ -93,6 +100,7 @@ def main(
     enable_send: bool,
     dangerously_skip_permissions: bool,
     fork: bool,
+    default_send_backend: str | None,
 ) -> None:
     """Start a live-updating transcript viewer for Claude Code sessions.
 
@@ -127,6 +135,10 @@ def main(
         click.echo("Error: --fork requires --enable-send", err=True)
         raise SystemExit(1)
 
+    if default_send_backend and not enable_send:
+        click.echo("Error: --default-send-backend requires --enable-send", err=True)
+        raise SystemExit(1)
+
     # Initialize backend
     from . import server
     from .sessions import MAX_SESSIONS as _
@@ -155,6 +167,8 @@ def main(
     server.set_send_enabled(enable_send)
     server.set_skip_permissions(dangerously_skip_permissions)
     server.set_fork_enabled(fork)
+    if default_send_backend:
+        server.set_default_send_backend(default_send_backend)
 
     if enable_send:
         click.echo(

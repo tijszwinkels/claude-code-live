@@ -124,6 +124,7 @@
         let catchupComplete = false;
         let sendEnabled = false;
         let forkEnabled = false;
+        let defaultSendBackend = null;
         const sessionStatus = new Map();
         let pendingSessionCounter = 0;
         const pendingMessages = [];
@@ -309,6 +310,17 @@
             }
         }
 
+        async function checkDefaultSendBackend() {
+            try {
+                const response = await fetch('/default-send-backend');
+                const data = await response.json();
+                defaultSendBackend = data.backend;
+            } catch (e) {
+                console.error('Failed to check default-send-backend:', e);
+                defaultSendBackend = null;
+            }
+        }
+
         function updateForkButtonVisibility() {
             // Only show fork button on desktop and when fork is enabled
             if (forkEnabled && !isMobile()) {
@@ -417,17 +429,29 @@
             updateInputBarUI();
         }
 
+        function getBackendForNewSession() {
+            // Fallback order: defaultSendBackend -> current session's backend -> null (let server decide)
+            if (defaultSendBackend) return defaultSendBackend;
+            if (activeSessionId) {
+                const session = sessions.get(activeSessionId);
+                if (session && session.backend) return session.backend;
+            }
+            return null;
+        }
+
         async function startPendingSession(pendingSession, message) {
             inputStatus.innerHTML = '<span class="spinner"></span> Starting session...';
             inputStatus.className = 'input-status running';
 
             try {
+                const backend = getBackendForNewSession();
                 const response = await fetch('/sessions/new', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: message,
-                        cwd: pendingSession.cwd || null
+                        cwd: pendingSession.cwd || null,
+                        backend: backend
                     })
                 });
 
@@ -1436,6 +1460,7 @@
 
             checkSendEnabled();
             checkForkEnabled();
+            checkDefaultSendBackend();
 
             eventSource = new EventSource('/events');
 

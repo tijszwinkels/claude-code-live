@@ -40,6 +40,7 @@ CATCHUP_TIMEOUT = (
 _send_enabled = False  # Enable with --enable-send CLI flag
 _skip_permissions = False  # Enable with --dangerously-skip-permissions CLI flag
 _fork_enabled = False  # Enable with --fork CLI flag
+_default_send_backend: str | None = None  # Enable with --default-send-backend CLI flag
 
 # Global state for server (not session-related)
 _clients: set[asyncio.Queue] = set()
@@ -66,6 +67,17 @@ def set_fork_enabled(enabled: bool) -> None:
     """Set whether the fork button is enabled."""
     global _fork_enabled
     _fork_enabled = enabled
+
+
+def set_default_send_backend(backend: str) -> None:
+    """Set the default backend for new sessions."""
+    global _default_send_backend
+    _default_send_backend = backend
+
+
+def get_default_send_backend() -> str | None:
+    """Get the default backend for new sessions."""
+    return _default_send_backend
 
 
 def is_send_enabled() -> bool:
@@ -619,6 +631,12 @@ async def fork_enabled() -> dict:
     return {"enabled": _fork_enabled}
 
 
+@app.get("/default-send-backend")
+async def default_send_backend() -> dict:
+    """Get the default backend for new sessions."""
+    return {"backend": _default_send_backend}
+
+
 @app.get("/sessions/{session_id}/status")
 async def session_status(session_id: str) -> dict:
     """Get the status of a session (running state, queue size)."""
@@ -767,18 +785,20 @@ async def create_new_session(request: NewSessionRequest) -> dict:
     backend = get_server_backend()
 
     # For multi-backend mode, get the specific backend if requested
+    # Fallback order: request.backend -> _default_send_backend -> first available
     target_backend = backend
-    if request.backend:
+    requested_backend = request.backend or _default_send_backend
+    if requested_backend:
         # Check if this is a MultiBackend with get_backend_by_name method
         get_by_name = getattr(backend, "get_backend_by_name", None)
         if get_by_name is not None:
-            specific_backend = get_by_name(request.backend)
+            specific_backend = get_by_name(requested_backend)
             if specific_backend is not None:
                 target_backend = specific_backend
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unknown backend: {request.backend}",
+                    detail=f"Unknown backend: {requested_backend}",
                 )
 
     # Check if CLI is available
