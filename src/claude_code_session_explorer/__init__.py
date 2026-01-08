@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Timer
 
 import click
+from click_default_group import DefaultGroup
 import uvicorn
 
 from .backends import list_backends, get_multi_backend
@@ -15,7 +16,18 @@ __version__ = "0.1.0"
 logger = logging.getLogger(__name__)
 
 
-@click.command()
+@click.group(cls=DefaultGroup, default="serve", default_if_no_args=True)
+@click.version_option(__version__, "-v", "--version")
+def main() -> None:
+    """Claude Code Session Explorer - Live transcript viewer and exporter.
+
+    When run without a subcommand, starts the live-updating transcript viewer server.
+    Use 'html' or 'md' subcommands to export transcripts to static files.
+    """
+    pass
+
+
+@main.command()
 @click.option(
     "--session",
     "-s",
@@ -88,7 +100,7 @@ logger = logging.getLogger(__name__)
     hidden=True,
     help="Default backend for new sessions (requires --experimental --enable-send)",
 )
-def main(
+def serve(
     session: Path | None,
     port: int,
     host: str,
@@ -102,7 +114,7 @@ def main(
     fork: bool,
     default_send_backend: str | None,
 ) -> None:
-    """Start a live-updating transcript viewer for Claude Code sessions.
+    """Start the live-updating transcript viewer server.
 
     Watches Claude Code session files and serves a live-updating HTML view
     with tabs for each session. New messages appear automatically.
@@ -219,6 +231,193 @@ def main(
         port=port,
         log_level="debug" if debug else "warning",
     )
+
+
+def resolve_session_path(session_arg: str) -> Path:
+    """Resolve a session argument to a Path.
+
+    Accepts either:
+    - A file path (e.g., /path/to/session.jsonl)
+    - An OpenCode session ID (e.g., ses_xxx) which is looked up in storage
+
+    Returns:
+        Path to the session file/directory
+
+    Raises:
+        click.BadParameter if the session cannot be found
+    """
+    # First, try as a direct file path
+    path = Path(session_arg)
+    if path.exists():
+        return path
+
+    # Try as an OpenCode session ID
+    opencode_storage = Path.home() / ".local" / "share" / "opencode" / "storage"
+    session_msg_dir = opencode_storage / "message" / session_arg
+
+    if session_msg_dir.exists():
+        # Return the session ID as a Path object for the export functions to handle
+        return Path(session_arg)
+
+    raise click.BadParameter(
+        f"Session not found: {session_arg}\n"
+        f"Tried: {path.absolute()}\n"
+        f"Tried: {session_msg_dir}"
+    )
+
+
+@main.command()
+@click.argument("session_file", type=str)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    help="Output directory for HTML files",
+)
+@click.option(
+    "-a",
+    "--output-auto",
+    is_flag=True,
+    help="Auto-name output subdirectory based on session file",
+)
+@click.option(
+    "--repo",
+    type=str,
+    help="GitHub repo (owner/repo) for commit links. Auto-detected if not specified.",
+)
+@click.option(
+    "--gist",
+    is_flag=True,
+    help="Upload to GitHub Gist and output a gisthost.github.io URL",
+)
+@click.option(
+    "--open",
+    "open_browser",
+    is_flag=True,
+    help="Open in browser after export",
+)
+@click.option(
+    "--json",
+    "include_json",
+    is_flag=True,
+    help="Include the original session JSON in the output directory",
+)
+def html(
+    session_file: str,
+    output: Path | None,
+    output_auto: bool,
+    repo: str | None,
+    gist: bool,
+    open_browser: bool,
+    include_json: bool,
+) -> None:
+    """Export a session transcript to static HTML files.
+
+    Generates paginated HTML files with an index page showing user prompts,
+    commits, and statistics. Each page contains 5 conversations with full
+    message content and tool usage.
+
+    SESSION_FILE can be a Claude Code .jsonl file path or an OpenCode session ID.
+
+    Example:
+        claude-code-session-explorer html session.jsonl -o ./output
+        claude-code-session-explorer html ses_xxx -o ./output
+    """
+    from .export import (
+        generate_html,
+        auto_output_name,
+        create_gist,
+        inject_gist_preview_js,
+    )
+    import shutil
+    import tempfile
+
+    # Resolve session file (can be path or OpenCode session ID)
+    session_path = resolve_session_path(session_file)
+
+    # Determine output directory
+    if output_auto:
+        parent_dir = output if output else Path(".")
+        output = parent_dir / auto_output_name(session_path)
+    elif output is None:
+        # Use session name (stem for files, name for session IDs)
+        session_name = session_path.stem if session_path.suffix else session_path.name
+        output = Path(tempfile.gettempdir()) / f"claude-session-{session_name}"
+
+    # At this point output is guaranteed to be a Path
+    assert output is not None
+
+    # Generate HTML
+    try:
+        index_path = generate_html(session_path, output, github_repo=repo)
+        click.echo(f"Generated: {output.resolve()}")
+    except Exception as e:
+        click.echo(f"Error generating HTML: {e}", err=True)
+        raise SystemExit(1)
+
+    # Copy JSON file if requested (only for JSONL files, not session IDs)
+    if include_json and session_path.suffix == ".jsonl":
+        json_dest = output / session_path.name
+        shutil.copy(session_path, json_dest)
+        click.echo(f"Copied: {json_dest}")
+
+    # Upload to gist if requested
+    if gist:
+        try:
+            inject_gist_preview_js(output)
+            click.echo("Creating GitHub gist...")
+            gist_id, gist_url = create_gist(output)
+            preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+            click.echo(f"Gist: {gist_url}")
+            click.echo(f"Preview: {preview_url}")
+        except click.ClickException as e:
+            click.echo(f"Gist upload failed: {e}", err=True)
+
+    # Open in browser if requested
+    if open_browser:
+        index_url = (output / "index.html").resolve().as_uri()
+        webbrowser.open(index_url)
+
+
+@main.command()
+@click.argument("session_file", type=str)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    help="Output file path. Use trailing slash for auto-named file in directory. Omit for stdout.",
+)
+def md(
+    session_file: str,
+    output: Path | None,
+) -> None:
+    """Export a session transcript to Markdown.
+
+    Generates a single Markdown file with all user messages, assistant responses,
+    and tool usage formatted for readability.
+
+    SESSION_FILE can be a Claude Code .jsonl file path or an OpenCode session ID.
+
+    Example:
+        claude-code-session-explorer md session.jsonl > transcript.md
+        claude-code-session-explorer md session.jsonl -o transcript.md
+        claude-code-session-explorer md ses_xxx -o transcript.md
+    """
+    from .export import export_markdown
+
+    # Resolve session file (can be path or OpenCode session ID)
+    session_path = resolve_session_path(session_file)
+
+    try:
+        result = export_markdown(session_path, output)
+        if output is None:
+            # Output to stdout
+            click.echo(result, nl=False)
+        else:
+            click.echo(f"Generated: {result}")
+    except Exception as e:
+        click.echo(f"Error generating Markdown: {e}", err=True)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

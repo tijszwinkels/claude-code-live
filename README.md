@@ -20,6 +20,8 @@ uvx git+https://github.com/tijszwinkels/claude-code-session-explorer
 
 ## Usage
 
+### Live Viewer (default)
+
 ```bash
 # Watch all recent sessions (auto-detected, up to 10)
 claude-code-session-explorer
@@ -37,8 +39,40 @@ claude-code-session-explorer --port 8765
 claude-code-session-explorer --no-open
 ```
 
+### Export to HTML
+
+Export session transcripts to static HTML files with pagination, search, and statistics:
+
+```bash
+# Export Claude Code session to HTML
+claude-code-session-explorer html ~/.claude/projects/.../session.jsonl -o ./output
+
+# Export OpenCode session by ID
+claude-code-session-explorer html ses_xxx -o ./output
+
+# Upload to GitHub Gist with preview URL
+claude-code-session-explorer html session.jsonl --gist
+
+# Open in browser after export
+claude-code-session-explorer html session.jsonl -o ./output --open
+```
+
+### Export to Markdown
+
+```bash
+# Export to stdout
+claude-code-session-explorer md session.jsonl
+
+# Export to file
+claude-code-session-explorer md session.jsonl -o transcript.md
+
+# Export OpenCode session
+claude-code-session-explorer md ses_xxx -o transcript.md
+```
+
 ## Features
 
+### Live Viewer
 - **Multi-session tabs** - View multiple Claude Code sessions in a tabbed interface
 - **Auto-follow** - Automatically switches to the tab with new activity (optional)
 - **Live updates** - New messages appear automatically via Server-Sent Events
@@ -46,6 +80,12 @@ claude-code-session-explorer --no-open
 - **Resource-conscious** - Limits DOM nodes to prevent memory issues
 - **Session discovery** - Automatically finds recent sessions in ~/.claude/projects/
 - **Same styling** - Uses the same CSS as claude-code-transcripts
+
+### Static Export
+- **HTML export** - Paginated HTML files with index page, full-text search, and statistics
+- **Markdown export** - Single-file Markdown for documentation or archiving
+- **Gist upload** - Upload to GitHub Gist with gisthost.github.io preview URL
+- **Multi-backend** - Supports both Claude Code (.jsonl) and OpenCode (session IDs)
 
 ## Development
 
