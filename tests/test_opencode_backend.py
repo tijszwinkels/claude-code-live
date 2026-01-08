@@ -28,11 +28,15 @@ def opencode_session(opencode_storage_dir):
     session_id = "ses_test123"
     project_id = "proj123"
 
+    # Create project directory so get_session_name can use it
+    project_dir = storage_dir / "test-project"
+    project_dir.mkdir(parents=True)
+
     # Create session file
     session_data = {
         "id": session_id,
         "projectID": project_id,
-        "directory": "/tmp/test-project",
+        "directory": str(project_dir),  # Use the temp directory we created
         "title": "Test Session",
         "version": "1.0.0",
         "time": {
@@ -105,6 +109,13 @@ def opencode_session(opencode_storage_dir):
         },
     }
     (asst_part_dir / "prt_tool1.json").write_text(json.dumps(tool_part))
+
+    # Step-finish part (required for read_new_lines to emit assistant messages)
+    step_finish_part = {
+        "id": "prt_zfinish",  # 'z' prefix to sort last
+        "type": "step-finish",
+    }
+    (asst_part_dir / "prt_zfinish.json").write_text(json.dumps(step_finish_part))
 
     return {
         "storage_dir": storage_dir,
@@ -245,8 +256,8 @@ class TestOpenCodeTailer:
         assert len(messages[0]["parts"]) == 1
         assert messages[0]["parts"][0]["type"] == "text"
 
-        # Assistant message has 2 parts (text + tool)
-        assert len(messages[1]["parts"]) == 2
+        # Assistant message has 3 parts (text + tool + step-finish)
+        assert len(messages[1]["parts"]) == 3
 
     def test_read_all_empty_session(self, opencode_storage_dir):
         """Test reading from session with no messages."""
