@@ -765,44 +765,6 @@
 
         }
 
-        function copyToClipboard(text, btn) {
-            // Try modern clipboard API first, fall back to execCommand for non-HTTPS
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(function() {
-                    showCopySuccess(btn);
-                }).catch(function() {
-                    fallbackCopy(text, btn);
-                });
-            } else {
-                fallbackCopy(text, btn);
-            }
-        }
-
-        function fallbackCopy(text, btn) {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            try {
-                document.execCommand('copy');
-                showCopySuccess(btn);
-            } catch (err) {
-                console.error('Failed to copy:', err);
-            }
-            document.body.removeChild(textarea);
-        }
-
-        function showCopySuccess(btn) {
-            if (btn) {
-                btn.classList.add('copied');
-                setTimeout(function() {
-                    btn.classList.remove('copied');
-                }, 1500);
-            }
-        }
-
         let messageTooltipTimeout = null;
 
         function formatModelName(model) {
