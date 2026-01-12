@@ -93,31 +93,39 @@ def get_session_name(session_path: Path) -> tuple[str, str]:
     # Try to find the actual directory by testing different dash positions
     # Some dashes are path separators, some are part of directory names,
     # and some were originally underscores.
+    # Additionally, -- could represent /. (dotfiles) since both / and . become -
     # Strategy: try replacing each dash with / and see if the resulting path exists
     # Also try replacing remaining dashes with underscores
 
-    # Find all dash positions
-    dash_positions = [i for i, c in enumerate(folder) if c == "-"]
+    # Try two variants: original folder, and folder with -- converted to -.
+    # The -- -> -. handles dotfiles (e.g., /.mycel encoded as --mycel)
+    folder_variants = [folder]
+    if "--" in folder:
+        folder_variants.append(folder.replace("--", "-."))
 
-    # Try combinations of dashes that could be path separators
-    # Start with trying each individual dash position from the end
-    # (most likely the project name is at the end)
-    for num_path_seps in range(len(dash_positions), 0, -1):
-        # Try the last N dashes as path separators
-        for i in range(len(dash_positions) - num_path_seps + 1):
-            positions_to_replace = dash_positions[i : i + num_path_seps]
-            candidate = list(folder)
-            for pos in positions_to_replace:
-                candidate[pos] = "/"
-            candidate_path = "/" + "".join(candidate)
-            if Path(candidate_path).is_dir():
-                return Path(candidate_path).name, candidate_path
+    for folder_variant in folder_variants:
+        # Find all dash positions
+        dash_positions = [i for i, c in enumerate(folder_variant) if c == "-"]
 
-            # Also try with remaining dashes as underscores
-            candidate_with_underscores = ["_" if c == "-" else c for c in candidate]
-            candidate_path_underscore = "/" + "".join(candidate_with_underscores)
-            if Path(candidate_path_underscore).is_dir():
-                return Path(candidate_path_underscore).name, candidate_path_underscore
+        # Try combinations of dashes that could be path separators
+        # Start with trying each individual dash position from the end
+        # (most likely the project name is at the end)
+        for num_path_seps in range(len(dash_positions), 0, -1):
+            # Try the last N dashes as path separators
+            for i in range(len(dash_positions) - num_path_seps + 1):
+                positions_to_replace = dash_positions[i : i + num_path_seps]
+                candidate = list(folder_variant)
+                for pos in positions_to_replace:
+                    candidate[pos] = "/"
+                candidate_path = "/" + "".join(candidate)
+                if Path(candidate_path).is_dir():
+                    return Path(candidate_path).name, candidate_path
+
+                # Also try with remaining dashes as underscores
+                candidate_with_underscores = ["_" if c == "-" else c for c in candidate]
+                candidate_path_underscore = "/" + "".join(candidate_with_underscores)
+                if Path(candidate_path_underscore).is_dir():
+                    return Path(candidate_path_underscore).name, candidate_path_underscore
 
     # Fallback: return the folder name as-is
     return folder or session_path.parent.name, folder

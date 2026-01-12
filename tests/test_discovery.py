@@ -11,6 +11,7 @@ from claude_code_session_explorer.backends.claude_code.discovery import (
     should_watch_file,
     is_subagent_session,
     get_parent_session_id,
+    get_session_name,
 )
 from claude_code_session_explorer.backends.claude_code.tailer import is_warmup_session
 
@@ -206,3 +207,72 @@ class TestFindRecentSessionsExcludesWarmup:
             # Should find regular session but not warmup
             assert "session.jsonl" in session_names
             assert "agent-warmup.jsonl" not in session_names
+
+
+class TestGetSessionName:
+    """Tests for get_session_name function."""
+
+    def test_decodes_dotfile_path(self):
+        """Should correctly decode paths with dotfiles (e.g., .mycel)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create the actual dotfile directory structure
+            dotfile_dir = Path(tmpdir) / ".mycel" / "agents" / "tool"
+            dotfile_dir.mkdir(parents=True)
+
+            # Create the encoded project directory name (as Claude Code would)
+            # /tmp/xxx/.mycel/agents/tool -> -tmp-xxx--mycel-agents-tool
+            encoded_name = tmpdir.replace("/", "-").lstrip("-") + "--mycel-agents-tool"
+            projects_dir = Path(tmpdir) / "projects"
+            project_dir = projects_dir / f"-{encoded_name}"
+            project_dir.mkdir(parents=True)
+
+            session_path = project_dir / "abc123.jsonl"
+            session_path.touch()
+
+            name, path = get_session_name(session_path)
+
+            assert path == str(dotfile_dir)
+            assert name == "tool"
+
+    def test_decodes_regular_path(self):
+        """Should correctly decode paths without dotfiles."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create the actual directory structure
+            regular_dir = Path(tmpdir) / "myproject"
+            regular_dir.mkdir(parents=True)
+
+            # Create the encoded project directory name
+            encoded_name = tmpdir.replace("/", "-").lstrip("-") + "-myproject"
+            projects_dir = Path(tmpdir) / "projects"
+            project_dir = projects_dir / f"-{encoded_name}"
+            project_dir.mkdir(parents=True)
+
+            session_path = project_dir / "abc123.jsonl"
+            session_path.touch()
+
+            name, path = get_session_name(session_path)
+
+            assert path == str(regular_dir)
+            assert name == "myproject"
+
+    def test_decodes_literal_double_dash_in_dirname(self):
+        """Should correctly decode paths with literal -- in directory name."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a directory with a literal double dash in the name
+            double_dash_dir = Path(tmpdir) / "foo--bar"
+            double_dash_dir.mkdir(parents=True)
+
+            # Create the encoded project directory name
+            # /tmp/xxx/foo--bar -> -tmp-xxx-foo--bar
+            encoded_name = tmpdir.replace("/", "-").lstrip("-") + "-foo--bar"
+            projects_dir = Path(tmpdir) / "projects"
+            project_dir = projects_dir / f"-{encoded_name}"
+            project_dir.mkdir(parents=True)
+
+            session_path = project_dir / "abc123.jsonl"
+            session_path.touch()
+
+            name, path = get_session_name(session_path)
+
+            assert path == str(double_dash_dir)
+            assert name == "foo--bar"
