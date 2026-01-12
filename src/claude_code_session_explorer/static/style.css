@@ -306,3 +306,26 @@ body { padding-top: 56px; padding-bottom: 100px; }
 .flash-message.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
 .flash-message.warning { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
 .flash-message.error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+
+/* New Session Modal */
+.new-session-modal { border: none; border-radius: 12px; padding: 0; box-shadow: 0 8px 32px rgba(0,0,0,0.2); max-width: 480px; width: 90%; background: var(--card-bg); }
+.new-session-modal::backdrop { background: rgba(0,0,0,0.5); }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; }
+.modal-header h2 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--text-color); }
+.modal-close-btn { background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; padding: 0; line-height: 1; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+.modal-close-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-color); }
+#new-session-form { padding: 20px; }
+.modal-field { margin-bottom: 16px; }
+.modal-field label { display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-color); margin-bottom: 6px; }
+.modal-input, .modal-select { width: 100%; padding: 10px 12px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.9rem; font-family: inherit; background: var(--card-bg); color: var(--text-color); outline: none; box-sizing: border-box; }
+.modal-input:focus, .modal-select:focus { border-color: var(--user-border); box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1); }
+.modal-select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
+.model-select-wrapper { display: flex; flex-direction: column; gap: 8px; }
+.model-search { font-size: 0.85rem; padding: 8px 10px; }
+.modal-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid #e0e0e0; }
+.modal-btn { padding: 10px 20px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+.modal-btn-cancel { background: #f5f5f5; color: var(--text-muted); }
+.modal-btn-cancel:hover { background: #e0e0e0; color: var(--text-color); }
+.modal-btn-create { background: var(--user-border); color: white; }
+.modal-btn-create:hover { background: #1565c0; }
+.modal-btn-create:disabled { background: #bdbdbd; cursor: not-allowed; }

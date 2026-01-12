@@ -3,6 +3,8 @@ notes/
 specs/
 docs/
 todo.txt
+opencode.json
+CLAUDE.local.md
 
 # Python
 __pycache__/

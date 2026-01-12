@@ -282,6 +282,41 @@ class TestSendFeature:
         assert response.status_code == 400
         assert "empty" in response.json()["detail"].lower()
 
+    def test_new_session_returns_400_for_invalid_model_index(self):
+        """Test that new session validates model_index against cached models.
+
+        Note: This test only validates when using a backend that supports models.
+        For backends without model support (like Claude Code), model_index is ignored.
+        """
+        server.set_send_enabled(True)
+        client = TestClient(app)
+
+        # Get backends to find one that supports models
+        backends_resp = client.get("/backends")
+        backends = backends_resp.json()["backends"]
+        model_backend = next(
+            (b for b in backends if b.get("supports_models")), None
+        )
+
+        if model_backend is None:
+            # No backend supports models, skip validation test
+            # Just verify that model_index is silently ignored for non-model backends
+            response = client.post(
+                "/sessions/new",
+                json={"message": "test", "model_index": 999},
+            )
+            # Should not fail - model_index is ignored
+            assert response.status_code != 400 or "model_index" not in response.json().get("detail", "").lower()
+            return
+
+        # Model index without fetching models first (cache is empty)
+        response = client.post(
+            "/sessions/new",
+            json={"message": "test", "backend": model_backend["name"], "model_index": 999},
+        )
+        assert response.status_code == 400
+        assert "invalid model_index" in response.json()["detail"].lower()
+
 
 class TestDefaultSendBackend:
     """Tests for the default send backend feature."""
@@ -316,6 +351,56 @@ class TestDefaultSendBackend:
             assert server.get_default_send_backend() == "claude-code"
         finally:
             server._default_send_backend = None
+
+
+class TestBackendsEndpoint:
+    """Tests for the backends listing endpoint."""
+
+    def test_backends_endpoint_returns_list(self):
+        """Test /backends returns a list of backends."""
+        client = TestClient(app)
+        response = client.get("/backends")
+        assert response.status_code == 200
+        data = response.json()
+        assert "backends" in data
+        assert isinstance(data["backends"], list)
+        # Should have at least one backend (the default)
+        assert len(data["backends"]) >= 1
+
+    def test_backends_endpoint_includes_required_fields(self):
+        """Test each backend has required fields."""
+        client = TestClient(app)
+        response = client.get("/backends")
+        assert response.status_code == 200
+        data = response.json()
+
+        for backend in data["backends"]:
+            assert "name" in backend
+            assert "cli_available" in backend
+            assert "supports_models" in backend
+
+    def test_backend_models_endpoint_404_for_unknown(self):
+        """Test /backends/{name}/models returns 404 for unknown backend."""
+        client = TestClient(app)
+        response = client.get("/backends/nonexistent/models")
+        assert response.status_code == 404
+
+    def test_backend_models_endpoint_returns_list(self):
+        """Test /backends/{name}/models returns a list."""
+        client = TestClient(app)
+
+        # First get the backends to find one that exists
+        backends_response = client.get("/backends")
+        backends = backends_response.json()["backends"]
+        if not backends:
+            pytest.skip("No backends available")
+
+        backend_name = backends[0]["name"]
+        response = client.get(f"/backends/{backend_name}/models")
+        assert response.status_code == 200
+        data = response.json()
+        assert "models" in data
+        assert isinstance(data["models"], list)
 
 
 # Note: SSE endpoint streaming tests are skipped because TestClient

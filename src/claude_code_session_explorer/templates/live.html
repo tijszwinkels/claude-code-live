@@ -85,6 +85,39 @@
     <!-- Flash message -->
     <div class="flash-message" id="flash-message"></div>
 
+    <!-- New Session Modal -->
+    <dialog id="new-session-modal" class="new-session-modal">
+        <div class="modal-header">
+            <h2>New Session</h2>
+            <button class="modal-close-btn" id="modal-close-btn" type="button">&times;</button>
+        </div>
+        <form id="new-session-form" method="dialog">
+            <div class="modal-field">
+                <label for="modal-cwd">Working Directory</label>
+                <input type="text" id="modal-cwd" class="modal-input" placeholder="/path/to/project" autocomplete="off">
+            </div>
+            <div class="modal-field">
+                <label for="modal-backend">Backend</label>
+                <select id="modal-backend" class="modal-select">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div class="modal-field" id="modal-model-field" style="display: none;">
+                <label for="modal-model">Model</label>
+                <div class="model-select-wrapper">
+                    <input type="text" id="modal-model-search" class="modal-input model-search" placeholder="Search models...">
+                    <select id="modal-model" class="modal-select">
+                        <option value="">(Default)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" class="modal-btn modal-btn-cancel" id="modal-cancel-btn">Cancel</button>
+                <button type="submit" class="modal-btn modal-btn-create">Create Session</button>
+            </div>
+        </form>
+    </dialog>
+
     <!-- Floating controls -->
     <div class="floating-controls" id="floating-controls">
         <button class="scroll-btn" id="scroll-top-btn" title="Scroll to top">&#8593;</button>
@@ -131,6 +164,17 @@
         const copySessionBtn = document.getElementById('copy-session-btn');
         const flashMessage = document.getElementById('flash-message');
 
+        // Modal elements
+        const newSessionModal = document.getElementById('new-session-modal');
+        const newSessionForm = document.getElementById('new-session-form');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+        const modalCancelBtn = document.getElementById('modal-cancel-btn');
+        const modalCwd = document.getElementById('modal-cwd');
+        const modalBackend = document.getElementById('modal-backend');
+        const modalModelField = document.getElementById('modal-model-field');
+        const modalModel = document.getElementById('modal-model');
+        const modalModelSearch = document.getElementById('modal-model-search');
+
         let currentProjectPath = null;
         let currentSessionId = null;
 
@@ -155,6 +199,11 @@
         let pendingSessionCounter = 0;
         const pendingMessages = [];
         let tooltipTimeout = null;
+
+        // Modal state
+        let availableBackends = [];
+        let cachedModels = {};  // backend_name -> [models]
+        let allModelsForFilter = [];  // All models for the current backend
 
         // Check if mobile
         function isMobile() {
@@ -481,8 +530,11 @@
             updateInputBarUI();
         }
 
-        function getBackendForNewSession() {
-            // Fallback order: defaultSendBackend -> current session's backend -> null (let server decide)
+        function getBackendForNewSession(pendingSession) {
+            // Priority: pendingSession.selectedBackend -> defaultSendBackend -> current session's backend -> null
+            if (pendingSession && pendingSession.selectedBackend) {
+                return pendingSession.selectedBackend;
+            }
             if (defaultSendBackend) return defaultSendBackend;
             if (activeSessionId) {
                 const session = sessions.get(activeSessionId);
@@ -496,15 +548,24 @@
             inputStatus.className = 'input-status running';
 
             try {
-                const backend = getBackendForNewSession();
+                const backend = getBackendForNewSession(pendingSession);
+                const modelIndex = pendingSession.selectedModelIndex;
+
+                const requestBody = {
+                    message: message,
+                    cwd: pendingSession.cwd || null,
+                    backend: backend
+                };
+
+                // Only include model_index if it's set (some backends don't support it)
+                if (modelIndex !== null && modelIndex !== undefined) {
+                    requestBody.model_index = modelIndex;
+                }
+
                 const response = await fetch('/sessions/new', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: message,
-                        cwd: pendingSession.cwd || null,
-                        backend: backend
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (response.ok) {
@@ -644,7 +705,7 @@
         interruptBtn.addEventListener('click', interruptSession);
 
         // New session functionality
-        function createPendingSession(cwd, projectName) {
+        function createPendingSession(cwd, projectName, backend, modelIndex, modelName) {
             pendingSessionCounter++;
             const pendingId = 'pending-' + pendingSessionCounter;
 
@@ -661,11 +722,16 @@
             const session = createSession(pendingId, 'New Session', displayProjectName, null, null, null, cwd, null, null);
             session.pending = true;
             session.cwd = cwd;
+            session.selectedBackend = backend || null;
+            session.selectedModelIndex = modelIndex;  // Integer index or null
 
             session.sidebarItem.classList.add('pending');
+            const backendInfo = backend ? ' using <strong>' + escapeHtml(backend) + '</strong>' : '';
+            const modelInfo = modelName ? ' (' + escapeHtml(modelName) + ')' : '';
             session.container.innerHTML = '<div class="pending-session-placeholder">' +
-                '<p>Type a message below to start this Claude session' +
+                '<p>Type a message below to start this session' +
                 (cwd ? ' in <strong>' + escapeHtml(displayProjectName) + '</strong>' : '') +
+                backendInfo + modelInfo +
                 '</p></div>';
 
             switchToSession(pendingId);
@@ -678,7 +744,122 @@
             }
         }
 
-        function promptForNewSession() {
+        // Modal functions
+        async function loadBackends() {
+            try {
+                const response = await fetch('/backends');
+                if (response.ok) {
+                    const data = await response.json();
+                    availableBackends = data.backends || [];
+                }
+            } catch (e) {
+                console.error('Failed to load backends:', e);
+                availableBackends = [];
+            }
+        }
+
+        async function loadModelsForBackend(backendName) {
+            // Check cache first
+            if (cachedModels[backendName]) {
+                return cachedModels[backendName];
+            }
+
+            try {
+                const response = await fetch('/backends/' + encodeURIComponent(backendName) + '/models');
+                if (response.ok) {
+                    const data = await response.json();
+                    cachedModels[backendName] = data.models || [];
+                    return cachedModels[backendName];
+                }
+            } catch (e) {
+                console.error('Failed to load models for ' + backendName + ':', e);
+            }
+            return [];
+        }
+
+        function populateBackendSelect() {
+            modalBackend.innerHTML = '';
+
+            if (availableBackends.length === 0) {
+                modalBackend.innerHTML = '<option value="">No backends available</option>';
+                return;
+            }
+
+            // Get saved backend preference
+            const savedBackend = localStorage.getItem('newSessionBackend') || '';
+
+            availableBackends.forEach(function(backend) {
+                const option = document.createElement('option');
+                option.value = backend.name;
+                option.textContent = backend.name;
+                if (!backend.cli_available) {
+                    option.textContent += ' (CLI not available)';
+                    option.disabled = true;
+                }
+                if (backend.name === savedBackend || (!savedBackend && backend.cli_available)) {
+                    option.selected = true;
+                }
+                modalBackend.appendChild(option);
+            });
+        }
+
+        async function populateModelSelect(backendName) {
+            // Find the backend info
+            const backend = availableBackends.find(function(b) { return b.name === backendName; });
+
+            if (!backend || !backend.supports_models) {
+                modalModelField.style.display = 'none';
+                allModelsForFilter = [];
+                return;
+            }
+
+            modalModelField.style.display = 'block';
+            modalModel.innerHTML = '<option value="">(Default)</option>';
+            modalModelSearch.value = '';
+
+            const models = await loadModelsForBackend(backendName);
+            allModelsForFilter = models;
+
+            // Get saved model preference for this backend
+            const savedModel = localStorage.getItem('newSessionModel_' + backendName) || '';
+
+            models.forEach(function(model) {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                if (model === savedModel) {
+                    option.selected = true;
+                }
+                modalModel.appendChild(option);
+            });
+        }
+
+        function filterModels(searchText) {
+            const search = searchText.toLowerCase();
+            modalModel.innerHTML = '<option value="">(Default)</option>';
+
+            const savedBackend = modalBackend.value;
+            const savedModel = localStorage.getItem('newSessionModel_' + savedBackend) || '';
+
+            allModelsForFilter.forEach(function(model) {
+                if (!search || model.toLowerCase().includes(search)) {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    if (model === savedModel) {
+                        option.selected = true;
+                    }
+                    modalModel.appendChild(option);
+                }
+            });
+        }
+
+        async function openNewSessionModal() {
+            // Load backends if not already loaded
+            if (availableBackends.length === 0) {
+                await loadBackends();
+            }
+
             // Get a default directory from active session if available
             let defaultDir = '';
             if (activeSessionId) {
@@ -688,22 +869,80 @@
                 }
             }
 
-            const dir = prompt('Enter working directory for new session:', defaultDir);
-            if (dir === null) return; // Cancelled
+            // Load saved cwd or use default
+            const savedCwd = localStorage.getItem('newSessionCwd');
+            modalCwd.value = savedCwd || defaultDir;
 
-            const trimmedDir = dir.trim();
-            if (!trimmedDir) {
+            // Populate backend select
+            populateBackendSelect();
+
+            // Populate model select for the selected backend
+            await populateModelSelect(modalBackend.value);
+
+            // Show modal
+            newSessionModal.showModal();
+            modalCwd.focus();
+        }
+
+        function closeNewSessionModal() {
+            newSessionModal.close();
+        }
+
+        function handleNewSessionSubmit(e) {
+            e.preventDefault();
+
+            const cwd = modalCwd.value.trim();
+            if (!cwd) {
                 alert('Please enter a directory path');
                 return;
             }
 
-            // Extract project name from path (last component)
-            const projectName = trimmedDir.split('/').filter(s => s).pop() || 'New Session';
+            const backend = modalBackend.value;
+            const modelSelect = modalModel;
+            const modelIndex = modelSelect.selectedIndex > 0 ? modelSelect.selectedIndex - 1 : null;  // -1 for "(Default)" option
+            const modelName = modelIndex !== null ? modelSelect.value : null;
 
-            createPendingSession(trimmedDir, projectName);
+            // Save preferences to localStorage
+            localStorage.setItem('newSessionCwd', cwd);
+            if (backend) {
+                localStorage.setItem('newSessionBackend', backend);
+            }
+            if (backend && modelName) {
+                localStorage.setItem('newSessionModel_' + backend, modelName);
+            }
+
+            // Extract project name from path (last component)
+            const projectName = cwd.split('/').filter(function(s) { return s; }).pop() || 'New Session';
+
+            // Close modal
+            closeNewSessionModal();
+
+            // Create pending session with backend/model info stored
+            createPendingSession(cwd, projectName, backend, modelIndex, modelName);
         }
 
-        newSessionBtn.addEventListener('click', promptForNewSession);
+        // Event listeners for modal
+        modalBackend.addEventListener('change', function() {
+            populateModelSelect(modalBackend.value);
+        });
+
+        modalModelSearch.addEventListener('input', function() {
+            filterModels(modalModelSearch.value);
+        });
+
+        modalCloseBtn.addEventListener('click', closeNewSessionModal);
+        modalCancelBtn.addEventListener('click', closeNewSessionModal);
+
+        newSessionForm.addEventListener('submit', handleNewSessionSubmit);
+
+        // Close modal on backdrop click
+        newSessionModal.addEventListener('click', function(e) {
+            if (e.target === newSessionModal) {
+                closeNewSessionModal();
+            }
+        });
+
+        newSessionBtn.addEventListener('click', openNewSessionModal);
 
         // Copy button handlers
         function copyToClipboard(text, btn) {

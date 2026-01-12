@@ -1,6 +1,7 @@
 """FastAPI server with SSE endpoint for live transcript updates."""
 
 import asyncio
+import inspect
 import json
 import logging
 import time
@@ -54,6 +55,9 @@ _pending_new_session_processes: dict[str, asyncio.subprocess.Process] = {}
 # Backend and rendering
 _backend: CodingToolBackend | None = None
 _css: str | None = None
+
+# Cached models per backend (backend_name -> list of model strings)
+_cached_models: dict[str, list[str]] = {}
 
 
 def set_send_enabled(enabled: bool) -> None:
@@ -217,6 +221,7 @@ class NewSessionRequest(BaseModel):
     message: str  # Initial message to send (required)
     cwd: str | None = None  # Working directory (optional)
     backend: str | None = None  # Backend to use (optional, for multi-backend mode)
+    model_index: int | None = None  # Model index from /backends/{name}/models (optional)
 
 
 async def broadcast_event(event_type: str, data: dict) -> None:
@@ -715,6 +720,88 @@ async def default_send_backend() -> dict:
     return {"backend": _default_send_backend}
 
 
+@app.get("/backends")
+async def list_backends() -> dict:
+    """List available backends for creating new sessions.
+
+    Returns dict with:
+        backends: List of backend info dicts with name, cli_available, supports_models
+    """
+    backend = get_server_backend()
+    backends_info = []
+
+    # Check if multi-backend
+    get_backends = getattr(backend, "get_backends", None)
+    if get_backends is not None:
+        # Multi-backend mode - list all backends
+        for b in get_backends():
+            has_models = hasattr(b, "get_models") and callable(getattr(b, "get_models"))
+            backends_info.append({
+                "name": b.name,
+                "cli_available": b.is_cli_available(),
+                "supports_models": has_models,
+            })
+    else:
+        # Single backend mode
+        has_models = hasattr(backend, "get_models") and callable(
+            getattr(backend, "get_models")
+        )
+        backends_info.append({
+            "name": backend.name,
+            "cli_available": backend.is_cli_available(),
+            "supports_models": has_models,
+        })
+
+    return {"backends": backends_info}
+
+
+def _normalize_backend_name(name: str) -> str:
+    """Normalize backend name for cache keys."""
+    return name.lower().replace(" ", "-")
+
+
+def _get_target_backend(backend_name: str):
+    """Get target backend by name, returns (backend, normalized_name) or raises 404."""
+    backend = get_server_backend()
+    normalized = _normalize_backend_name(backend_name)
+
+    # Check if multi-backend
+    get_by_name = getattr(backend, "get_backend_by_name", None)
+    if get_by_name is not None:
+        target_backend = get_by_name(backend_name)
+        if target_backend is not None:
+            return target_backend, _normalize_backend_name(target_backend.name)
+    elif _normalize_backend_name(backend.name) == normalized:
+        # Single backend mode, check name matches
+        return backend, normalized
+
+    raise HTTPException(status_code=404, detail=f"Backend not found: {backend_name}")
+
+
+@app.get("/backends/{backend_name}/models")
+async def list_backend_models(backend_name: str) -> dict:
+    """List available models for a specific backend.
+
+    Args:
+        backend_name: Name of the backend (case-insensitive)
+
+    Returns dict with:
+        models: List of model identifiers (indexed, use index for model_index param)
+    """
+    target_backend, normalized_name = _get_target_backend(backend_name)
+
+    # Check if backend supports models
+    get_models = getattr(target_backend, "get_models", None)
+    if get_models is None or not callable(get_models):
+        return {"models": []}
+
+    # Fetch and cache models
+    models = get_models()
+    _cached_models[normalized_name] = models
+
+    return {"models": models}
+
+
 @app.get("/sessions/{session_id}/status")
 async def session_status(session_id: str) -> dict:
     """Get the status of a session (running state, queue size)."""
@@ -906,7 +993,28 @@ async def create_new_session(request: NewSessionRequest) -> dict:
             cwd = potential_cwd
 
     # Build command using target backend
-    cmd_args = target_backend.build_new_session_command(message, _skip_permissions)
+    # Check if backend supports model parameter (OpenCode does, Claude Code doesn't)
+    build_cmd = target_backend.build_new_session_command
+    sig = inspect.signature(build_cmd)
+
+    model: str | None = None
+    if "model" in sig.parameters and request.model_index is not None:
+        # Look up model from cached list by index
+        normalized_backend = _normalize_backend_name(target_backend.name)
+        cached = _cached_models.get(normalized_backend, [])
+        if 0 <= request.model_index < len(cached):
+            model = cached[request.model_index]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model_index: {request.model_index}. "
+                f"Fetch models from /backends/{target_backend.name}/models first.",
+            )
+
+    if model:
+        cmd_args = build_cmd(message, _skip_permissions, model=model)
+    else:
+        cmd_args = build_cmd(message, _skip_permissions)
 
     try:
         # Start CLI in the working directory

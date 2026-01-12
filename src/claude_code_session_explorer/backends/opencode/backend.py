@@ -34,6 +34,7 @@ from .cli import (
     build_send_command,
     build_fork_command,
     build_new_session_command,
+    get_available_models,
 )
 from .renderer import OpenCodeRenderer
 
@@ -226,17 +227,27 @@ class OpenCodeBackend:
         self,
         message: str,
         skip_permissions: bool = False,
+        model: str | None = None,
     ) -> list[str]:
         """Build the CLI command to start a new session.
 
         Args:
             message: Initial message.
             skip_permissions: Ignored for OpenCode.
+            model: Model to use (e.g., "anthropic/claude-sonnet-4-5"). Optional.
 
         Returns:
             Command arguments list.
         """
-        return build_new_session_command(message, skip_permissions)
+        return build_new_session_command(message, skip_permissions, model)
+
+    def get_models(self) -> list[str]:
+        """Get available models for this backend.
+
+        Returns:
+            List of model identifiers.
+        """
+        return get_available_models()
 
     def ensure_session_indexed(self, session_id: str) -> None:
         """Ensure a session is indexed/known to the CLI tool.

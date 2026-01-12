@@ -548,6 +548,23 @@ class TestOpenCodeBackend:
 
         assert cmd == ["opencode", "run", "start message"]
 
+    def test_build_new_session_command_with_model(self, opencode_storage_dir):
+        """Test building new session command with model parameter."""
+        from claude_code_session_explorer.backends.opencode import OpenCodeBackend
+
+        backend = OpenCodeBackend(storage_dir=opencode_storage_dir)
+        cmd = backend.build_new_session_command(
+            "start message", model="anthropic/claude-sonnet-4-5"
+        )
+
+        assert cmd == [
+            "opencode",
+            "run",
+            "-m",
+            "anthropic/claude-sonnet-4-5",
+            "start message",
+        ]
+
     def test_get_session_metadata(self, opencode_session):
         """Test getting session metadata."""
         from claude_code_session_explorer.backends.opencode import OpenCodeBackend

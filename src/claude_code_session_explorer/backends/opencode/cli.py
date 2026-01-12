@@ -11,7 +11,11 @@ Key differences from Claude Code:
 
 from __future__ import annotations
 
+import logging
 import shutil
+import subprocess
+
+logger = logging.getLogger(__name__)
 
 
 CLI_COMMAND = "opencode"
@@ -88,16 +92,57 @@ def build_fork_command(
 def build_new_session_command(
     message: str,
     skip_permissions: bool = False,
+    model: str | None = None,
 ) -> list[str]:
     """Build the CLI command to start a new session.
 
     Args:
         message: Initial message.
         skip_permissions: Ignored for OpenCode (uses config file).
+        model: Model to use (e.g., "anthropic/claude-sonnet-4-5"). Optional.
 
     Returns:
         Command arguments list.
     """
-    # opencode run "{message}"
-    cmd = [CLI_COMMAND, "run", message]
+    # opencode run [-m model] "{message}"
+    cmd = [CLI_COMMAND, "run"]
+    if model:
+        cmd.extend(["-m", model])
+    cmd.append(message)
     return cmd
+
+
+def get_available_models() -> list[str]:
+    """Get list of available models from OpenCode CLI.
+
+    Returns:
+        List of model identifiers (e.g., ["anthropic/claude-sonnet-4-5", ...]).
+        Returns empty list if CLI is not available or command fails.
+    """
+    if not is_cli_available():
+        return []
+
+    try:
+        result = subprocess.run(
+            [CLI_COMMAND, "models"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            logger.warning(f"opencode models command failed: {result.stderr}")
+            return []
+
+        # Parse output - one model per line
+        models = []
+        for line in result.stdout.strip().split("\n"):
+            line = line.strip()
+            if line and "/" in line:  # Model format is "provider/model"
+                models.append(line)
+        return models
+    except subprocess.TimeoutExpired:
+        logger.warning("opencode models command timed out")
+        return []
+    except Exception as e:
+        logger.warning(f"Failed to get OpenCode models: {e}")
+        return []
