@@ -47,6 +47,10 @@ _include_subagents = False  # Enable with --include-subagents CLI flag
 _clients: set[asyncio.Queue] = set()
 _watch_task: asyncio.Task | None = None
 
+# Pending processes for new sessions (cwd -> process)
+# When a new session is started, we store the process here until the session file appears
+_pending_new_session_processes: dict[str, asyncio.subprocess.Process] = {}
+
 # Backend and rendering
 _backend: CodingToolBackend | None = None
 _css: str | None = None
@@ -282,6 +286,30 @@ async def broadcast_session_status(session_id: str) -> None:
     )
 
 
+def _attach_pending_process(info: SessionInfo) -> None:
+    """Attach a pending process to a newly discovered session.
+
+    When a new session is created via /sessions/new, we store the process
+    in _pending_new_session_processes keyed by cwd. When the session file
+    appears and we add it, we check if there's a matching pending process
+    and attach it so the stop button works.
+    """
+    if not info.project_path:
+        return
+
+    # Try to match by project path
+    project_path_key = str(Path(info.project_path).resolve())
+    proc = _pending_new_session_processes.pop(project_path_key, None)
+
+    if proc is not None:
+        # Check if process is still running
+        if proc.returncode is None:
+            info.process = proc
+            logger.info(f"Attached pending process to session {info.session_id}")
+        else:
+            logger.debug(f"Pending process already exited for {info.session_id}")
+
+
 async def run_cli_for_session(
     session_id: str, message: str, fork: bool = False
 ) -> None:
@@ -398,8 +426,13 @@ async def check_for_new_sessions() -> None:
                     if evicted_id:
                         await broadcast_session_removed(evicted_id)
                     if info:
+                        # Check if there's a pending process for this session's project path
+                        _attach_pending_process(info)
                         await broadcast_session_added(info)
                         await broadcast_session_catchup(info)
+                        # If we attached a process, broadcast status so UI shows stop button
+                        if info.process is not None:
+                            await broadcast_session_status(info.session_id)
     except Exception as e:
         logger.warning(f"Failed to check for new sessions: {e}")
 
@@ -863,6 +896,12 @@ async def create_new_session(request: NewSessionRequest) -> dict:
             stderr = await proc.stderr.read() if proc.stderr else b""
             logger.error(f"CLI failed to start: {stderr.decode()}")
             raise HTTPException(status_code=500, detail="Failed to start session")
+
+        # Store process so we can attach it to the session when it appears
+        # Use resolved cwd path as key (or empty string for no cwd)
+        cwd_key = str(cwd.resolve()) if cwd else ""
+        _pending_new_session_processes[cwd_key] = proc
+        logger.debug(f"Stored pending process for cwd: {cwd_key}")
 
         return {"status": "started", "cwd": str(cwd) if cwd else None}
 
