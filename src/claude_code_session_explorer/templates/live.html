@@ -78,6 +78,9 @@
     <!-- Message tooltip for token usage (hidden, shown on hover) -->
     <div class="message-tooltip" id="message-tooltip"></div>
 
+    <!-- Flash message -->
+    <div class="flash-message" id="flash-message"></div>
+
     <!-- Floating controls -->
     <div class="floating-controls" id="floating-controls">
         <button class="scroll-btn" id="scroll-top-btn" title="Scroll to top">&#8593;</button>
@@ -121,6 +124,7 @@
         const sessionIdBar = document.getElementById('session-id-bar');
         const sessionIdValue = document.getElementById('session-id-value');
         const copySessionBtn = document.getElementById('copy-session-btn');
+        const flashMessage = document.getElementById('flash-message');
 
         let currentProjectPath = null;
         let currentSessionId = null;
@@ -500,12 +504,21 @@
                     method: 'POST'
                 });
 
-                if (!response.ok) {
+                if (response.ok) {
+                    showFlash('Session interrupted', 'success');
+                } else {
                     const data = await response.json();
                     console.error('Interrupt failed:', data.detail);
+                    // Show user-friendly message based on error
+                    if (response.status === 409) {
+                        showFlash('Process not running yet, try again', 'warning');
+                    } else {
+                        showFlash('Failed to stop: ' + (data.detail || 'Unknown error'), 'error');
+                    }
                 }
             } catch (e) {
                 console.error('Interrupt error:', e);
+                showFlash('Failed to stop session', 'error');
             }
         }
 
@@ -559,6 +572,25 @@
         function autoResizeTextarea() {
             messageInput.style.height = 'auto';
             messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+        }
+
+        let flashTimeout = null;
+        function showFlash(message, type = 'info', duration = 3000) {
+            // Clear any existing timeout
+            if (flashTimeout) {
+                clearTimeout(flashTimeout);
+            }
+            // Set content and type
+            flashMessage.textContent = message;
+            flashMessage.className = 'flash-message ' + type;
+            // Show
+            requestAnimationFrame(() => {
+                flashMessage.classList.add('visible');
+            });
+            // Auto-hide
+            flashTimeout = setTimeout(() => {
+                flashMessage.classList.remove('visible');
+            }, duration);
         }
 
         messageInput.addEventListener('input', function() {

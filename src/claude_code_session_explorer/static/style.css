@@ -295,3 +295,11 @@ body { padding-top: 56px; padding-bottom: 100px; }
     .floating-controls { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); right: 12px; }
     .scroll-btn { width: 40px; height: 40px; }
 }
+
+/* Flash message */
+.flash-message { position: fixed; top: 48px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; z-index: 1001; opacity: 0; pointer-events: none; transition: opacity 0.3s ease, top 0.3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.flash-message.visible { opacity: 1; top: 56px; pointer-events: auto; }
+.flash-message.info { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+.flash-message.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+.flash-message.warning { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+.flash-message.error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
