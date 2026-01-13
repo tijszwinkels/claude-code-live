@@ -599,9 +599,15 @@ async def watch_loop() -> None:
                         await broadcast_session_removed(session_id)
                     continue
 
-                if session_id and get_session(session_id) is not None:
-                    # Known session - queue for message processing
-                    sessions_to_process.add(session_id)
+                info = get_session(session_id) if session_id else None
+                if info is not None:
+                    # Known session - check mtime to filter spurious events
+                    if info.check_mtime_changed():
+                        sessions_to_process.add(session_id)
+                    else:
+                        logger.debug(
+                            f"Ignoring spurious event for {session_id} (mtime unchanged)"
+                        )
                 else:
                     # Unknown session - might be a new session file
                     need_new_session_check = True
