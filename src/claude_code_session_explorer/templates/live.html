@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Code Session Explorer</title>
     <style>{{ css|safe }}</style>
+    <!-- Highlight.js for syntax highlighting in file preview -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
 </head>
 <body>
     <div class="status-bar" id="status-bar">
@@ -35,6 +38,7 @@
             </div>
         </div>
         <div class="project-list" id="project-list"></div>
+        <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
     </div>
 
     <!-- Main content -->
@@ -51,6 +55,27 @@
             </div>
             <div id="sessions"></div>
         </div>
+    </div>
+
+    <!-- Preview Pane -->
+    <div class="preview-pane" id="preview-pane">
+        <div class="preview-header">
+            <div class="preview-title">
+                <span class="preview-filename" id="preview-filename"></span>
+                <span class="preview-path" id="preview-path"></span>
+            </div>
+            <div class="preview-actions">
+                <label class="preview-view-toggle" id="preview-view-toggle" style="display: none;" title="Toggle between rendered and source view">
+                    <input type="checkbox" id="preview-view-checkbox" checked>
+                    <span class="toggle-label">Rendered</span>
+                </label>
+                <button class="preview-copy-btn" id="preview-copy-btn" title="Copy file path">Copy Path</button>
+                <button class="preview-close-btn" id="preview-close-btn" title="Close preview">&times;</button>
+            </div>
+        </div>
+        <div class="preview-content" id="preview-content"></div>
+        <div class="preview-status" id="preview-status"></div>
+        <div class="preview-resize-handle" id="preview-resize-handle"></div>
     </div>
 
     <!-- Input bar -->
@@ -139,6 +164,7 @@
         const sessionTitleBar = document.getElementById('session-title-bar');
         const sidebar = document.getElementById('sidebar');
         const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const sidebarResizeHandle = document.getElementById('sidebar-resize-handle');
         const hamburgerBtn = document.getElementById('hamburger-btn');
         const autoSwitchCheckbox = document.getElementById('auto-switch');
         const autoSwitchLabel = document.getElementById('auto-switch-label');
@@ -146,6 +172,17 @@
         const searchInput = document.getElementById('sidebar-search');
         const inputBar = document.getElementById('input-bar');
         const mainContent = document.getElementById('main-content');
+        const previewPane = document.getElementById('preview-pane');
+        const previewFilename = document.getElementById('preview-filename');
+        const previewPath = document.getElementById('preview-path');
+        const previewContent = document.getElementById('preview-content');
+        const previewStatus = document.getElementById('preview-status');
+        const previewCloseBtn = document.getElementById('preview-close-btn');
+        const previewCopyBtn = document.getElementById('preview-copy-btn');
+        const previewResizeHandle = document.getElementById('preview-resize-handle');
+        const previewViewToggle = document.getElementById('preview-view-toggle');
+        const previewViewCheckbox = document.getElementById('preview-view-checkbox');
+        const floatingControls = document.getElementById('floating-controls');
         const messageInput = document.getElementById('message-input');
         const inputStatus = document.getElementById('input-status');
         const sendBtn = document.getElementById('send-btn');
@@ -189,6 +226,12 @@
         const projects = new Map();  // project_name -> { name, sessions: Set, lastActivity, element }
         let activeSessionId = null;
         let sidebarOpen = localStorage.getItem('sidebarOpen') !== 'false';  // default open
+        let sidebarWidth = parseInt(localStorage.getItem('sidebarWidth')) || 280;  // default 280px
+        let previewPaneOpen = false;
+        let previewPaneWidth = parseInt(localStorage.getItem('previewPaneWidth')) || 400;  // default 400px
+        let previewFilePath = null;
+        let previewFileData = null;  // Store current file data for view toggle
+        const sessionPreviewPaths = new Map();  // session_id -> file path (track open preview per session)
         let autoSwitch = localStorage.getItem('autoSwitch') !== 'false';    // default on
         let autoScroll = localStorage.getItem('autoScroll') !== 'false';    // default on
         let sortBy = localStorage.getItem('sortBy') || 'modified';          // default: modified
@@ -300,6 +343,252 @@
 
         // Initialize sidebar state
         updateSidebarState();
+
+        // Initialize sidebar width from localStorage
+        document.documentElement.style.setProperty('--sidebar-width', sidebarWidth + 'px');
+
+        // Sidebar resize handle
+        let isSidebarResizing = false;
+        let sidebarStartX, sidebarStartWidth;
+
+        sidebarResizeHandle.addEventListener('mousedown', function(e) {
+            if (isMobile()) return;  // No resize on mobile
+            isSidebarResizing = true;
+            sidebarStartX = e.clientX;
+            sidebarStartWidth = sidebarWidth;
+            sidebarResizeHandle.classList.add('dragging');
+            document.body.style.cursor = 'ew-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isSidebarResizing) return;
+
+            const delta = e.clientX - sidebarStartX;
+            let newWidth = sidebarStartWidth + delta;
+
+            // Clamp width: min 200px, max 500px
+            newWidth = Math.max(200, Math.min(500, newWidth));
+
+            sidebarWidth = newWidth;
+            document.documentElement.style.setProperty('--sidebar-width', newWidth + 'px');
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isSidebarResizing) {
+                isSidebarResizing = false;
+                sidebarResizeHandle.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                localStorage.setItem('sidebarWidth', sidebarWidth);
+            }
+        });
+
+        // Preview Pane
+        document.documentElement.style.setProperty('--preview-pane-width', previewPaneWidth + 'px');
+
+        async function openPreviewPane(filePath) {
+            previewFilePath = filePath;
+            previewFileData = null;
+            const filename = filePath.split('/').pop();
+
+            // Track this preview for the current session
+            if (activeSessionId) {
+                sessionPreviewPaths.set(activeSessionId, filePath);
+            }
+
+            previewFilename.textContent = filename;
+            previewPath.textContent = filePath;
+            previewContent.innerHTML = '';
+            previewViewToggle.style.display = 'none';  // Hide toggle until we know if it's markdown
+            showPreviewStatus('loading', 'Loading...');
+
+            // Open the pane
+            previewPane.classList.add('open');
+            mainContent.classList.add('preview-open');
+            inputBar.classList.add('preview-open');
+            floatingControls.classList.add('preview-open');
+            previewPaneOpen = true;
+
+            try {
+                const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showPreviewStatus('error', data.detail || 'Failed to load file');
+                    return;
+                }
+
+                // Store data for view toggle
+                previewFileData = data;
+
+                // Show toggle for markdown files
+                if (data.rendered_html) {
+                    previewViewToggle.style.display = '';
+                    previewViewCheckbox.checked = true;
+                    updateViewToggleLabel();
+                }
+
+                // Render content with syntax highlighting
+                renderPreviewContent(data, previewViewCheckbox.checked);
+
+                if (data.truncated) {
+                    showPreviewStatus('warning', 'File truncated (showing first 1MB)');
+                } else {
+                    hidePreviewStatus();
+                }
+            } catch (err) {
+                showPreviewStatus('error', 'Failed to load file: ' + err.message);
+            }
+        }
+
+        function renderPreviewContent(data, showRendered = true) {
+            previewContent.innerHTML = '';
+
+            // If we have pre-rendered HTML (markdown) and showRendered is true, display that
+            if (data.rendered_html && showRendered) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'markdown-preview';
+                wrapper.innerHTML = data.rendered_html;
+                previewContent.appendChild(wrapper);
+
+                // Apply highlight.js to any code blocks in the markdown
+                if (window.hljs) {
+                    wrapper.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                }
+                return;
+            }
+
+            // Otherwise render as code with syntax highlighting
+            const pre = document.createElement('pre');
+            const code = document.createElement('code');
+
+            // Set language class if detected
+            if (data.language) {
+                code.className = 'language-' + data.language;
+            }
+
+            code.textContent = data.content;
+            pre.appendChild(code);
+            previewContent.appendChild(pre);
+
+            // Apply highlight.js if available
+            if (window.hljs) {
+                hljs.highlightElement(code);
+            }
+        }
+
+        function closePreviewPane(clearSessionAssociation = true) {
+            previewPane.classList.remove('open');
+            mainContent.classList.remove('preview-open');
+            inputBar.classList.remove('preview-open');
+            floatingControls.classList.remove('preview-open');
+            previewPaneOpen = false;
+            previewFilePath = null;
+            previewFileData = null;
+
+            // Clear session association if requested (not when switching sessions)
+            if (clearSessionAssociation && activeSessionId) {
+                sessionPreviewPaths.delete(activeSessionId);
+            }
+        }
+
+        function showPreviewStatus(type, message) {
+            previewStatus.className = 'preview-status visible ' + type;
+            previewStatus.textContent = message;
+        }
+
+        function hidePreviewStatus() {
+            previewStatus.className = 'preview-status';
+        }
+
+        // Preview pane event listeners
+        previewCloseBtn.addEventListener('click', closePreviewPane);
+
+        previewCopyBtn.addEventListener('click', function() {
+            if (previewFilePath) {
+                navigator.clipboard.writeText(previewFilePath);
+                const originalText = previewCopyBtn.textContent;
+                previewCopyBtn.textContent = 'Copied!';
+                setTimeout(() => previewCopyBtn.textContent = originalText, 1500);
+            }
+        });
+
+        // View toggle for markdown files
+        function updateViewToggleLabel() {
+            const label = previewViewToggle.querySelector('.toggle-label');
+            label.textContent = previewViewCheckbox.checked ? 'Rendered' : 'Source';
+        }
+
+        previewViewCheckbox.addEventListener('change', function() {
+            updateViewToggleLabel();
+            if (previewFileData) {
+                renderPreviewContent(previewFileData, previewViewCheckbox.checked);
+            }
+        });
+
+        // Escape key to close preview pane
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && previewPaneOpen) {
+                closePreviewPane();
+            }
+        });
+
+        // Click on file paths to open preview (except copy button)
+        document.addEventListener('click', function(e) {
+            // Skip if clicking the copy button
+            if (e.target.closest('.copy-btn')) return;
+
+            const fullpath = e.target.closest('.file-tool-fullpath[data-copy-path]');
+            if (!fullpath) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+            const path = fullpath.dataset.copyPath;
+            openPreviewPane(path);
+        });
+
+        // Preview pane resize handle
+        let isPreviewResizing = false;
+        let previewStartX, previewStartWidth;
+
+        previewResizeHandle.addEventListener('mousedown', function(e) {
+            if (isMobile()) return;
+            isPreviewResizing = true;
+            previewStartX = e.clientX;
+            previewStartWidth = previewPaneWidth;
+            previewResizeHandle.classList.add('dragging');
+            document.body.style.cursor = 'ew-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isPreviewResizing) return;
+
+            const delta = previewStartX - e.clientX;  // Note: reversed because resizing from left edge
+            let newWidth = previewStartWidth + delta;
+
+            // Clamp width: min 300px, max 60% of viewport
+            const maxWidth = window.innerWidth * 0.6;
+            newWidth = Math.max(300, Math.min(maxWidth, newWidth));
+
+            previewPaneWidth = newWidth;
+            document.documentElement.style.setProperty('--preview-pane-width', newWidth + 'px');
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isPreviewResizing) {
+                isPreviewResizing = false;
+                previewResizeHandle.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                localStorage.setItem('previewPaneWidth', previewPaneWidth);
+            }
+        });
 
         // Auto-switch UI
         function updateAutoSwitchUI() {
@@ -1209,7 +1498,7 @@
             // Build date sections HTML
             let dateSectionsHtml = '';
             dateCategoryOrder.forEach(function(category) {
-                const isOpen = category === 'today' || category === 'yesterday';
+                const isOpen = category === 'today';
                 dateSectionsHtml += `
                     <div class="date-section${isOpen ? '' : ' collapsed'}" data-category="${category}">
                         <div class="date-divider">
@@ -1669,6 +1958,11 @@
             const session = sessions.get(sessionId);
             if (!session) return;
 
+            // Close current preview without clearing session association
+            if (previewPaneOpen) {
+                closePreviewPane(false);
+            }
+
             // Update containers
             sessions.forEach(function(s) {
                 s.container.classList.remove('active');
@@ -1704,6 +1998,12 @@
             }
 
             updateInputBarUI();
+
+            // Restore preview for this session if one was open
+            const savedPreviewPath = sessionPreviewPaths.get(sessionId);
+            if (savedPreviewPath) {
+                openPreviewPane(savedPreviewPath);
+            }
 
             if (scrollToBottom) {
                 requestAnimationFrame(function() {

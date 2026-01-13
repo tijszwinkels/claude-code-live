@@ -215,6 +215,62 @@ class SendMessageRequest(BaseModel):
     message: str
 
 
+class FileResponse(BaseModel):
+    """Response for file preview endpoint."""
+
+    content: str
+    path: str
+    filename: str
+    size: int
+    language: str | None
+    truncated: bool = False
+    rendered_html: str | None = None  # For markdown files: pre-rendered HTML
+
+
+# File extension to highlight.js language mapping
+EXTENSION_TO_LANGUAGE = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".jsx": "javascript",
+    ".json": "json",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".scss": "scss",
+    ".less": "less",
+    ".md": "markdown",
+    ".markdown": "markdown",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".xml": "xml",
+    ".sql": "sql",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".zsh": "bash",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".h": "c",
+    ".hpp": "cpp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".r": "r",
+    ".lua": "lua",
+    ".pl": "perl",
+    ".gitignore": "plaintext",
+    ".env": "plaintext",
+}
+
+MAX_FILE_SIZE = 1024 * 1024  # 1MB
+
+
 class NewSessionRequest(BaseModel):
     """Request body for starting a new session."""
 
@@ -1049,3 +1105,101 @@ async def create_new_session(request: NewSessionRequest) -> dict:
     except Exception as e:
         logger.error(f"Error starting new session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/file")
+async def get_file(path: str) -> FileResponse:
+    """Fetch file contents for preview.
+
+    Args:
+        path: Absolute path to the file to preview.
+
+    Returns:
+        FileResponse with content, metadata, and language detection.
+
+    Raises:
+        HTTPException: 404 if file not found, 400 if binary or not a file,
+                      403 if permission denied, 500 for other errors.
+    """
+    file_path = Path(path)
+
+    # Security: Restrict to user's home directory to prevent path traversal
+    home_dir = Path.home()
+    try:
+        resolved_path = file_path.resolve()
+        # Check if resolved path is within home directory
+        resolved_path.relative_to(home_dir)
+    except ValueError:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: path must be within home directory ({home_dir})",
+        )
+
+    # Validate path exists
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    # Ensure it's a file, not directory
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail=f"Not a file: {path}")
+
+    # Check file size
+    try:
+        file_size = file_path.stat().st_size
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Cannot stat file: {e}")
+
+    truncated = file_size > MAX_FILE_SIZE
+
+    # Detect language from extension
+    extension = file_path.suffix.lower()
+    language = EXTENSION_TO_LANGUAGE.get(extension)
+
+    # Special case: Makefile, Dockerfile without extension
+    if file_path.name.lower() == "makefile":
+        language = "makefile"
+    elif file_path.name.lower() == "dockerfile":
+        language = "dockerfile"
+
+    try:
+        # Read file content - only read up to MAX_FILE_SIZE bytes to prevent
+        # memory exhaustion on large files
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read(MAX_FILE_SIZE + 1)  # Read one extra to detect truncation
+
+        # If we read more than MAX_FILE_SIZE, file is truncated
+        if len(content) > MAX_FILE_SIZE:
+            content = content[:MAX_FILE_SIZE]
+            truncated = True
+
+        # Check for binary content (null bytes indicate binary)
+        if "\x00" in content[:8192]:
+            raise HTTPException(status_code=400, detail="Binary file cannot be displayed")
+
+        # Render markdown to HTML if it's a markdown file
+        # Use safe=True to escape raw HTML and prevent XSS attacks
+        rendered_html = None
+        if language == "markdown":
+            from .backends.shared.rendering import render_markdown_text
+
+            rendered_html = render_markdown_text(content, safe=True)
+
+        return FileResponse(
+            content=content,
+            path=str(file_path.absolute()),
+            filename=file_path.name,
+            size=file_size,
+            language=language,
+            truncated=truncated,
+            rendered_html=rendered_html,
+        )
+
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Binary file cannot be displayed")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reading file {path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
