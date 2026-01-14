@@ -2213,6 +2213,33 @@
 
             eventSource.addEventListener('sessions', function(e) {
                 const data = JSON.parse(e.data);
+
+                // Track which sessions the server knows about
+                const serverSessionIds = new Set(data.sessions.map(function(s) { return s.id; }));
+
+                // Remove sessions that are no longer tracked by the server
+                // (but keep pending sessions as they're client-side only)
+                const sessionsToRemove = [];
+                sessions.forEach(function(session, sessionId) {
+                    if (!session.pending && !serverSessionIds.has(sessionId)) {
+                        sessionsToRemove.push(sessionId);
+                    }
+                });
+                sessionsToRemove.forEach(function(sessionId) {
+                    removeSession(sessionId);
+                });
+
+                // Clear unread/waiting badges for existing sessions on reconnect
+                // (they'll be re-evaluated based on new messages after catchup)
+                sessions.forEach(function(session) {
+                    session.sidebarItem.classList.remove('unread', 'waiting');
+                });
+                // Also clear project-level badges
+                projects.forEach(function(project) {
+                    project.element.classList.remove('unread', 'waiting');
+                });
+
+                // Create or update sessions from server
                 data.sessions.forEach(function(session) {
                     createSession(
                         session.id,
@@ -2374,6 +2401,10 @@
 
             eventSource.onopen = function() {
                 updateStatus('', 'Connected');
+                // Reset catchupComplete on EVERY connection (including auto-reconnects)
+                // This ensures catchup messages aren't treated as new messages
+                // when EventSource auto-reconnects without calling connect()
+                catchupComplete = false;
             };
 
             eventSource.onerror = function(e) {
