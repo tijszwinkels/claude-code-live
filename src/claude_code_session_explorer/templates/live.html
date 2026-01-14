@@ -239,7 +239,9 @@
         const sessionPreviewPaths = new Map();  // session_id -> file path (track open preview per session)
         let autoSwitch = localStorage.getItem('autoSwitch') !== 'false';    // default on
         let autoScroll = localStorage.getItem('autoScroll') !== 'false';    // default on
-        let statusColors = localStorage.getItem('statusColors') !== 'false'; // default on
+        // Status colors feature is hidden behind ?title-colors URL param
+        const titleColorsEnabled = new URLSearchParams(window.location.search).has('title-colors');
+        let statusColors = titleColorsEnabled && localStorage.getItem('statusColors') !== 'false'; // default on when enabled
         let sortBy = localStorage.getItem('sortBy') || 'modified';          // default: modified
         let autoSwitchDebounce = null;
         let catchupComplete = false;
@@ -646,19 +648,24 @@
         autoSwitchCheckbox.addEventListener('change', updateAutoSwitchUI);
         updateAutoSwitchUI();
 
-        // Status colors UI
-        function updateStatusColorsUI() {
-            statusColors = statusColorsCheckbox.checked;
-            if (statusColors) {
-                sidebar.classList.add('status-colors-enabled');
-            } else {
-                sidebar.classList.remove('status-colors-enabled');
+        // Status colors UI (only when ?title-colors param is present)
+        if (titleColorsEnabled) {
+            function updateStatusColorsUI() {
+                statusColors = statusColorsCheckbox.checked;
+                if (statusColors) {
+                    sidebar.classList.add('status-colors-enabled');
+                } else {
+                    sidebar.classList.remove('status-colors-enabled');
+                }
+                localStorage.setItem('statusColors', statusColors);
             }
-            localStorage.setItem('statusColors', statusColors);
+            statusColorsCheckbox.checked = statusColors;
+            statusColorsCheckbox.addEventListener('change', updateStatusColorsUI);
+            updateStatusColorsUI();
+        } else {
+            // Hide the checkbox when feature is not enabled
+            document.getElementById('status-colors-label').style.display = 'none';
         }
-        statusColorsCheckbox.checked = statusColors;
-        statusColorsCheckbox.addEventListener('change', updateStatusColorsUI);
-        updateStatusColorsUI();
 
         // Theme toggle
         function initTheme() {
