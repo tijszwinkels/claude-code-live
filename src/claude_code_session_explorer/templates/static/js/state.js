@@ -125,6 +125,11 @@ export function initDom() {
     dom.copySessionBtn = document.getElementById('copy-session-btn');
     dom.flashMessage = document.getElementById('flash-message');
     dom.themeToggle = document.getElementById('theme-toggle');
+    dom.rightSidebarToggle = document.getElementById('right-sidebar-toggle');
+    dom.previewBackBtn = document.getElementById('preview-back-btn');
+    dom.treeCollapseBtn = document.getElementById('tree-collapse-btn');
+    dom.treeExpandBtn = document.getElementById('tree-expand-btn');
+    dom.fileTreeContent = document.getElementById('file-tree-content');
     // Modal elements
     dom.newSessionModal = document.getElementById('new-session-modal');
     dom.newSessionForm = document.getElementById('new-session-form');
@@ -154,7 +159,8 @@ export const state = {
     sidebarOpen: localStorage.getItem('sidebarOpen') !== 'false',
     sidebarWidth: parseInt(localStorage.getItem('sidebarWidth')) || 280,
     previewPaneOpen: false,
-    previewPaneWidth: parseInt(localStorage.getItem('previewPaneWidth')) || 400,
+    // Default wider pane for split view
+    previewPaneWidth: parseInt(localStorage.getItem('previewPaneWidth')) || 700,
     previewFilePath: null,
     previewFileData: null,
 
@@ -190,7 +196,11 @@ export const state = {
     sidebarStartWidth: 0,
     isPreviewResizing: false,
     previewStartX: 0,
-    previewStartWidth: 0
+    previewStartWidth: 0,
+    isTreeResizing: false,
+    treeStartX: 0,
+    treeStartWidth: 0,
+    treeSidebarWidth: parseInt(localStorage.getItem('treeSidebarWidth')) || 250
 };
 
 // Initialize status colors based on URL param

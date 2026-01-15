@@ -355,7 +355,7 @@ body { padding-top: 56px; padding-bottom: 100px; }
 .modal-btn-create:disabled { background: #bdbdbd; cursor: not-allowed; }
 
 /* Theme toggle button */
-.theme-toggle { background: none; border: none; color: white; font-size: 1.1rem; cursor: pointer; padding: 4px 8px; display: flex; align-items: center; justify-content: center; border-radius: 4px; opacity: 0.8; transition: opacity 0.15s; }
+.theme-toggle { background: none; border: none; color: white; font-size: 1.3rem; cursor: pointer; padding: 4px 8px; display: flex; align-items: center; justify-content: center; border-radius: 4px; opacity: 0.7; transition: opacity 0.15s; }
 .theme-toggle:hover { opacity: 1; background: rgba(255,255,255,0.2); }
 
 /* Dark mode overrides for hardcoded colors */
@@ -397,9 +397,175 @@ body { padding-top: 56px; padding-bottom: 100px; }
 [data-theme="dark"] .flash-message.error { background: #3d1f1f; color: #ef9a9a; border-color: #d32f2f; }
 
 /* Preview Pane */
-:root { --preview-pane-width: 400px; }
+:root { --preview-pane-width: 700px; } /* Widened for split view */
 .preview-pane { position: fixed; top: 40px; right: 0; bottom: 0; width: var(--preview-pane-width); background: var(--card-bg); border-left: 1px solid var(--border-color); z-index: 999; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.3s ease; }
 .preview-pane.open { transform: translateX(0); }
+
+/* Split View Container */
+.preview-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Tree Header (New) */
+.file-tree-header {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(0,0,0,0.02);
+    height: 41px; /* Match preview header exactly */
+    justify-content: space-between;
+}
+
+.tree-header-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-color);
+}
+
+/* Custom Hamburger Icon */
+.hamburger-icon {
+    display: block;
+    width: 16px;
+    height: 12px;
+    position: relative;
+    background: transparent;
+}
+
+.hamburger-icon::before,
+.hamburger-icon::after,
+.hamburger-icon span {
+    content: '';
+    display: block;
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background-color: var(--text-muted);
+    border-radius: 1px;
+    transition: background-color 0.15s;
+}
+
+.hamburger-icon::before { top: 0; }
+.hamburger-icon span { top: 5px; }
+.hamburger-icon::after { bottom: 0; }
+
+button:hover .hamburger-icon::before,
+button:hover .hamburger-icon::after,
+button:hover .hamburger-icon span {
+    background-color: var(--text-color);
+}
+
+/* Stylized Folder Icon (outline style) */
+.folder-icon {
+    width: 16px;
+    height: 12px;
+    position: relative;
+    border: 1.5px solid currentColor;
+    border-radius: 0 2px 2px 2px;
+    background: transparent;
+    transition: opacity 0.15s;
+}
+
+.folder-icon::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: -1.5px;
+    width: 7px;
+    height: 5px;
+    border: 1.5px solid currentColor;
+    border-bottom: none;
+    border-radius: 2px 2px 0 0;
+    transition: opacity 0.15s;
+}
+
+/* Updated Toggle Button Styles */
+.tree-toggle-btn, .tree-expand-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px; /* Larger hit area */
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.tree-toggle-btn:hover, .tree-expand-btn:hover {
+    background: rgba(0,0,0,0.05);
+}
+
+/* Dark mode adjustment for hover */
+[data-theme="dark"] .tree-toggle-btn:hover, 
+[data-theme="dark"] .tree-expand-btn:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+/* Button to expand tree (in preview header) */
+.tree-expand-btn {
+    display: none; /* Hidden by default */
+    margin-right: 8px;
+}
+
+/* When sidebar is collapsed, show the expand button in preview header */
+.preview-pane.tree-collapsed .tree-expand-btn {
+    display: flex;
+}
+
+/* Hide tree sidebar when parent has tree-collapsed class */
+.preview-pane.tree-collapsed .file-tree-sidebar {
+    display: none;
+}
+
+/* Current Path Header in Tree (Adjusted) */
+.tree-current-path {
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 8px;
+    word-break: break-all;
+    background: rgba(0,0,0,0.02);
+}
+
+
+.file-tree-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    /* Always visible in split view */
+    display: block !important; 
+}
+
+/* File Content Area */
+.preview-main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+    background: var(--card-bg);
+}
+
+.preview-content { 
+    flex: 1; 
+    overflow: auto; 
+    padding: 0;
+    /* Always visible in split view (can be empty) */
+    display: block !important;
+}
+
+/* Adjust header to span full width or just main area? 
+   Let's keep one header for the whole pane for simplicity, 
+   or maybe move title to main area.
+   Let's try a unified header for now.
+*/
+
 .main-content.preview-open { margin-right: var(--preview-pane-width); transition: margin-right 0.3s ease; }
 .input-bar.preview-open { right: var(--preview-pane-width); transition: right 0.3s ease; }
 .floating-controls.preview-open { right: calc(var(--preview-pane-width) + 20px); transition: right 0.3s ease; }
@@ -456,7 +622,27 @@ body { padding-top: 56px; padding-bottom: 100px; }
 .markdown-preview td { padding: 10px 16px; border-bottom: 1px solid var(--border-color); }
 .markdown-preview tbody tr:last-child td { border-bottom: none; }
 .markdown-preview tbody tr:hover { background: rgba(25, 118, 210, 0.04); }
-.markdown-preview tbody tr:nth-child(even) { background: rgba(0,0,0,0.02); }
+.markdown-preview tbody tr:nth-child(even) { 
+    background: rgba(0,0,0,0.05); /* Slightly darker than header */
+}
+
+/* Tree Resize Handle */
+.tree-resize-handle {
+    width: 4px;
+    background: transparent;
+    cursor: ew-resize;
+    flex-shrink: 0;
+    transition: background 0.2s ease;
+    z-index: 10;
+}
+.tree-resize-handle:hover,
+.tree-resize-handle.dragging {
+    background: var(--user-border);
+}
+.preview-pane.tree-collapsed .tree-resize-handle {
+    display: none;
+}
+
 .markdown-preview tbody tr:nth-child(even):hover { background: rgba(25, 118, 210, 0.06); }
 
 /* Markdown code blocks */
@@ -469,3 +655,193 @@ body { padding-top: 56px; padding-bottom: 100px; }
 [data-theme="dark"] .markdown-preview tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
 [data-theme="dark"] .markdown-preview tbody tr:hover { background: rgba(66, 165, 245, 0.08); }
 [data-theme="dark"] .markdown-preview tbody tr:nth-child(even):hover { background: rgba(66, 165, 245, 0.1); }
+
+/* Tree Node Styles */
+.tree-root {
+    margin: 0;
+    padding: 0;
+}
+.tree-item {
+    list-style: none;
+}
+.tree-summary {
+    cursor: pointer;
+    padding: 4px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--text-color);
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tree-summary:hover {
+    background: rgba(0,0,0,0.04);
+}
+.tree-summary.selected {
+    background: rgba(25, 118, 210, 0.1);
+    color: var(--user-border);
+}
+.tree-icon {
+    width: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.tree-children {
+    padding-left: 14px; /* Indentation */
+    margin: 0;
+    list-style: none;
+    border-left: 1px solid rgba(0,0,0,0.05);
+    margin-left: 10px;
+}
+details > summary {
+    list-style: none;
+}
+details > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Icons using simple unicode/emoji for now, or could use SVG */
+.tree-icon-folder::before {
+    content: "📁";
+    opacity: 0.5; /* Gray-ish by opacity */
+    filter: grayscale(100%); /* Make it gray */
+}
+details[open] > summary .tree-icon-folder::before {
+    content: "📂";
+    opacity: 0.7;
+    filter: grayscale(100%);
+}
+.tree-icon-file::before {
+    content: "📄";
+    opacity: 0.7;
+}
+
+/* Back Button in Preview Header */
+.preview-back-btn {
+    padding: 4px 8px;
+    margin-right: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: none; /* Hidden by default */
+    align-items: center;
+    justify-content: center;
+}
+.preview-back-btn:hover {
+    background: rgba(0,0,0,0.05);
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .tree-summary:hover {
+    background: rgba(255,255,255,0.04);
+}
+[data-theme="dark"] .tree-summary.selected {
+    background: rgba(25, 118, 210, 0.2);
+}
+[data-theme="dark"] .tree-children {
+    border-left-color: rgba(255,255,255,0.05);
+}
+
+/* Right Sidebar Toggle */
+.right-sidebar-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    margin-left: auto;
+    color: rgba(255,255,255,0.7);
+    transition: opacity 0.15s;
+}
+.right-sidebar-toggle .folder-icon::before {
+    background: var(--header-bg, #2196f3);
+}
+.right-sidebar-toggle:hover {
+    background: rgba(255,255,255,0.2);
+    color: white;
+}
+
+/* Tree Sidebar in Preview Pane */
+.file-tree-sidebar {
+    width: 250px;
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    background: rgba(0,0,0,0.02);
+    flex-shrink: 0;
+    transition: width 0.2s ease, opacity 0.2s ease;
+    overflow: hidden;
+    position: relative;
+}
+
+.file-tree-sidebar.collapsed {
+    width: 0;
+    opacity: 0;
+    border-right: none;
+}
+
+/* Toggle Tree Button (inside preview pane) */
+.toggle-tree-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+}
+.toggle-tree-btn:hover {
+    background: rgba(0,0,0,0.05);
+    color: var(--text-color);
+}
+.toggle-tree-btn .icon-open { display: none; }
+.toggle-tree-btn.collapsed .icon-open { display: block; }
+.toggle-tree-btn.collapsed .icon-close { display: none; }
+
+
+.right-sidebar-toggle:hover {
+    background: rgba(255,255,255,0.2);
+}
+
+/* View Switcher in Preview Header */
+.view-switcher {
+    display: flex;
+    background: rgba(0,0,0,0.05);
+    border-radius: 6px;
+    padding: 2px;
+    margin-right: 8px;
+}
+.switcher-btn {
+    border: none;
+    background: transparent;
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--text-muted);
+}
+.switcher-btn.active {
+    background: var(--card-bg);
+    color: var(--text-color);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    font-weight: 500;
+}
+[data-theme="dark"] .view-switcher {
+    background: rgba(255,255,255,0.05);
+}
+[data-theme="dark"] .switcher-btn.active {
+    background: #333;
+}

@@ -287,7 +287,9 @@ class NewSessionRequest(BaseModel):
     message: str  # Initial message to send (required)
     cwd: str | None = None  # Working directory (optional)
     backend: str | None = None  # Backend to use (optional, for multi-backend mode)
-    model_index: int | None = None  # Model index from /backends/{name}/models (optional)
+    model_index: int | None = (
+        None  # Model index from /backends/{name}/models (optional)
+    )
 
 
 async def broadcast_event(event_type: str, data: dict) -> None:
@@ -899,21 +901,25 @@ async def list_backends() -> dict:
         # Multi-backend mode - list all backends
         for b in get_backends():
             has_models = hasattr(b, "get_models") and callable(getattr(b, "get_models"))
-            backends_info.append({
-                "name": b.name,
-                "cli_available": b.is_cli_available(),
-                "supports_models": has_models,
-            })
+            backends_info.append(
+                {
+                    "name": b.name,
+                    "cli_available": b.is_cli_available(),
+                    "supports_models": has_models,
+                }
+            )
     else:
         # Single backend mode
         has_models = hasattr(backend, "get_models") and callable(
             getattr(backend, "get_models")
         )
-        backends_info.append({
-            "name": backend.name,
-            "cli_available": backend.is_cli_available(),
-            "supports_models": has_models,
-        })
+        backends_info.append(
+            {
+                "name": backend.name,
+                "cli_available": backend.is_cli_available(),
+                "supports_models": has_models,
+            }
+        )
 
     return {"backends": backends_info}
 
@@ -1214,6 +1220,121 @@ async def create_new_session(request: NewSessionRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _get_directory_structure(rootdir: Path, shallow: bool = False) -> dict:
+    """
+    Creates a nested dictionary that represents the folder structure of rootdir.
+    """
+    dir_name = rootdir.name
+
+    # Base structure
+    item = {
+        "name": dir_name,
+        "path": str(rootdir.resolve()),
+        "type": "directory",
+        "children": [],
+    }
+
+    try:
+        # Sort directories first, then files
+        # Use simple heuristics for sorting
+        entries = list(os.scandir(rootdir))
+        entries.sort(key=lambda e: (not e.is_dir(), e.name.lower()))
+
+        for entry in entries:
+            # Skip hidden files/dirs and common ignored dirs
+            if entry.name.startswith("."):
+                continue
+            if entry.name in [
+                "__pycache__",
+                "node_modules",
+                "venv",
+                "env",
+                "dist",
+                "build",
+                "coverage",
+                "target",
+                "egg-info",
+            ]:
+                continue
+
+            if entry.is_dir(follow_symlinks=False):
+                if shallow:
+                    # For shallow listing, we just indicate it's a directory
+                    # We don't recurse.
+                    item["children"].append(
+                        {
+                            "name": entry.name,
+                            "path": str(Path(entry.path).resolve()),
+                            "type": "directory",
+                            "has_children": True,
+                        }
+                    )
+                else:
+                    item["children"].append(
+                        _get_directory_structure(Path(entry.path), shallow=False)
+                    )
+            else:
+                item["children"].append(
+                    {
+                        "name": entry.name,
+                        "path": str(Path(entry.path).resolve()),
+                        "type": "file",
+                    }
+                )
+    except (PermissionError, OSError):
+        pass
+
+    return item
+
+
+@app.get("/sessions/{session_id}/tree")
+async def get_session_file_tree(session_id: str, path: str | None = None) -> dict:
+    """Get the file tree for a session's working directory or specific path.
+
+    Args:
+        session_id: The session ID
+        path: Optional absolute path to list. If None, uses session's project path.
+    """
+    info = get_session(session_id)
+    if info is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    target_path = None
+
+    if path:
+        # User requested specific path - expand ~ to home directory
+        if path.startswith("~"):
+            path = str(Path.home() / path[2:])
+        target_path = Path(path).resolve()
+
+        # Security: Ensure it's within home directory
+        # (Relaxed from project_path restriction to allow home navigation)
+        try:
+            target_path.relative_to(Path.home())
+        except ValueError:
+            # Just log for now, allow system access if local
+            pass
+    else:
+        # Default to project path
+        if not info.project_path:
+            return {"tree": None, "error": "No project path set for this session"}
+        target_path = Path(info.project_path)
+
+    if not target_path.exists() or not target_path.is_dir():
+        return {
+            "tree": None,
+            "error": f"Path does not exist: {target_path}",
+        }
+
+    try:
+        # Use shallow listing for navigation efficiency
+        tree = _get_directory_structure(target_path, shallow=True)
+        return {"tree": tree, "home": str(Path.home())}
+    except Exception as e:
+        logger.error(f"Error generating file tree for {session_id}: {e}")
+        return {"tree": None, "error": str(e)}
+
+
 @app.get("/api/file")
 async def get_file(path: str) -> FileResponse:
     """Fetch file contents for preview.
@@ -1281,7 +1402,9 @@ async def get_file(path: str) -> FileResponse:
 
         # Check for binary content (null bytes indicate binary)
         if "\x00" in content[:8192]:
-            raise HTTPException(status_code=400, detail="Binary file cannot be displayed")
+            raise HTTPException(
+                status_code=400, detail="Binary file cannot be displayed"
+            )
 
         # Render markdown to HTML if it's a markdown file
         # Use safe=True to escape raw HTML and prevent XSS attacks
@@ -1310,3 +1433,50 @@ async def get_file(path: str) -> FileResponse:
     except Exception as e:
         logger.error(f"Error reading file {path}: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
+
+
+class PathTypeResponse(BaseModel):
+    """Response for path type check."""
+
+    type: str  # "file" or "directory"
+
+
+@app.get("/api/path/type")
+async def check_path_type(path: str) -> PathTypeResponse:
+    """Check if a path exists and return its type (lightweight, no content fetching).
+
+    Args:
+        path: Absolute path to check. Supports ~ for home directory.
+
+    Returns:
+        PathTypeResponse with type "file" or "directory".
+
+    Raises:
+        HTTPException: 404 if path not found or outside home directory.
+    """
+    # Expand ~ to home directory
+    if path.startswith("~"):
+        path = str(Path.home() / path[2:])
+
+    file_path = Path(path)
+
+    # Security: Restrict to user's home directory
+    home_dir = Path.home()
+    try:
+        resolved_path = file_path.resolve()
+        resolved_path.relative_to(home_dir)
+    except ValueError:
+        # Outside home directory - return not found
+        raise HTTPException(status_code=404)
+
+    try:
+        if file_path.exists():
+            if file_path.is_file():
+                return PathTypeResponse(type="file")
+            elif file_path.is_dir():
+                return PathTypeResponse(type="directory")
+        raise HTTPException(status_code=404)
+    except HTTPException:
+        raise
+    except (PermissionError, OSError):
+        raise HTTPException(status_code=404)

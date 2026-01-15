@@ -7,6 +7,7 @@ import {
     initAutoScroll, initScrollButtons, initUserNavigation, initSearch
 } from './ui.js';
 import { initPreviewPane } from './preview.js';
+import { initFileTree } from './filetree.js';
 import { initSortSelect, initCopyButtons, reorderSidebar } from './sessions.js';
 import { initMessaging } from './messaging.js';
 import { initModal } from './modal.js';
@@ -29,6 +30,7 @@ function init() {
 
     // Initialize preview pane
     initPreviewPane();
+    initFileTree();
 
     // Initialize session management
     initSortSelect(reorderSidebar);

@@ -673,6 +673,247 @@ Normal **bold** text.
         assert "<strong>bold</strong>" in rendered
 
 
+class TestPathTypeAPI:
+    """Tests for the path type check API endpoint."""
+
+    def test_file_returns_type_file(self, home_tmp_path):
+        """Test checking an existing file returns type 'file'."""
+        test_file = home_tmp_path / "test.py"
+        test_file.write_text("print('hello')")
+
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path={test_file}")
+
+        assert response.status_code == 200
+        assert response.json()["type"] == "file"
+
+    def test_directory_returns_type_directory(self, home_tmp_path):
+        """Test checking a directory returns type 'directory'."""
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path={home_tmp_path}")
+
+        assert response.status_code == 200
+        assert response.json()["type"] == "directory"
+
+    def test_not_exists_returns_404(self, home_tmp_path):
+        """Test checking a non-existent path returns 404."""
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path={home_tmp_path}/nonexistent.py")
+
+        assert response.status_code == 404
+
+    def test_outside_home_returns_404(self):
+        """Test that paths outside home directory return 404."""
+        client = TestClient(app)
+        response = client.get("/api/path/type?path=/etc/passwd")
+
+        assert response.status_code == 404
+
+    def test_tilde_expansion(self, home_tmp_path):
+        """Test tilde expansion for home directory."""
+        from pathlib import Path
+
+        home = Path.home()
+        test_file = home_tmp_path / "tilde_test.txt"
+        test_file.write_text("test")
+
+        # Get the path relative to home
+        relative_path = test_file.relative_to(home)
+
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path=~/{relative_path}")
+
+        assert response.status_code == 200
+        assert response.json()["type"] == "file"
+
+
+class TestSessionTreeAPI:
+    """Tests for the session file tree API endpoint."""
+
+    def test_tree_returns_404_for_unknown_session(self):
+        """Test tree endpoint returns 404 for unknown session."""
+        client = TestClient(app)
+        response = client.get("/sessions/nonexistent/tree")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+    def test_tree_returns_error_when_no_project_path(self, temp_jsonl_file):
+        """Test tree returns error when session has no project path."""
+        info, _ = add_session(temp_jsonl_file)
+        # Explicitly clear project path to test this case
+        info.project_path = None
+        client = TestClient(app)
+
+        response = client.get(f"/sessions/{temp_jsonl_file.stem}/tree")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tree"] is None
+        assert "no project path" in data["error"].lower()
+
+    def test_tree_returns_directory_listing(self, home_tmp_path, temp_jsonl_file):
+        """Test tree returns directory listing for valid session with project path."""
+        # Create a session with a project path
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        # Create some test files and directories
+        (home_tmp_path / "file1.py").write_text("# test")
+        (home_tmp_path / "file2.js").write_text("// test")
+        subdir = home_tmp_path / "subdir"
+        subdir.mkdir()
+        (subdir / "nested.txt").write_text("nested")
+
+        client = TestClient(app)
+        response = client.get(f"/sessions/{temp_jsonl_file.stem}/tree")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tree"] is not None
+        assert "children" in data["tree"]
+
+        # Check that files are listed
+        names = [child["name"] for child in data["tree"]["children"]]
+        assert "file1.py" in names
+        assert "file2.js" in names
+        assert "subdir" in names
+
+    def test_tree_with_explicit_path(self, home_tmp_path, temp_jsonl_file):
+        """Test tree with explicit path parameter."""
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        # Create a subdirectory with files
+        subdir = home_tmp_path / "mysubdir"
+        subdir.mkdir()
+        (subdir / "inner.txt").write_text("inner content")
+
+        client = TestClient(app)
+        response = client.get(
+            f"/sessions/{temp_jsonl_file.stem}/tree?path={subdir}"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tree"] is not None
+        names = [child["name"] for child in data["tree"]["children"]]
+        assert "inner.txt" in names
+
+    def test_tree_returns_error_for_nonexistent_path(self, home_tmp_path, temp_jsonl_file):
+        """Test tree returns error for non-existent path."""
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        client = TestClient(app)
+        response = client.get(
+            f"/sessions/{temp_jsonl_file.stem}/tree?path={home_tmp_path}/nonexistent"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tree"] is None
+        assert "does not exist" in data["error"]
+
+    def test_tree_tilde_expansion(self, home_tmp_path, temp_jsonl_file):
+        """Test tree expands tilde in path."""
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        # Create a test file
+        (home_tmp_path / "tilde_test.txt").write_text("test")
+
+        # Get path relative to home
+        relative_path = home_tmp_path.relative_to(Path.home())
+
+        client = TestClient(app)
+        response = client.get(
+            f"/sessions/{temp_jsonl_file.stem}/tree?path=~/{relative_path}"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tree"] is not None
+        names = [child["name"] for child in data["tree"]["children"]]
+        assert "tilde_test.txt" in names
+
+    def test_tree_excludes_hidden_files(self, home_tmp_path, temp_jsonl_file):
+        """Test tree excludes hidden files and directories."""
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        # Create visible and hidden files
+        (home_tmp_path / "visible.txt").write_text("visible")
+        (home_tmp_path / ".hidden").write_text("hidden")
+        (home_tmp_path / ".hiddendir").mkdir()
+
+        client = TestClient(app)
+        response = client.get(f"/sessions/{temp_jsonl_file.stem}/tree")
+
+        assert response.status_code == 200
+        data = response.json()
+        names = [child["name"] for child in data["tree"]["children"]]
+        assert "visible.txt" in names
+        assert ".hidden" not in names
+        assert ".hiddendir" not in names
+
+    def test_tree_excludes_common_ignored_dirs(self, home_tmp_path, temp_jsonl_file):
+        """Test tree excludes common ignored directories like node_modules."""
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        # Create various directories
+        (home_tmp_path / "src").mkdir()
+        (home_tmp_path / "node_modules").mkdir()
+        (home_tmp_path / "__pycache__").mkdir()
+        (home_tmp_path / "venv").mkdir()
+
+        client = TestClient(app)
+        response = client.get(f"/sessions/{temp_jsonl_file.stem}/tree")
+
+        assert response.status_code == 200
+        data = response.json()
+        names = [child["name"] for child in data["tree"]["children"]]
+        assert "src" in names
+        assert "node_modules" not in names
+        assert "__pycache__" not in names
+        assert "venv" not in names
+
+    def test_tree_directories_sorted_before_files(self, home_tmp_path, temp_jsonl_file):
+        """Test tree sorts directories before files."""
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        # Create files and dirs (names chosen to test alphabetic sorting)
+        (home_tmp_path / "aaa_file.txt").write_text("file")
+        (home_tmp_path / "zzz_dir").mkdir()
+
+        client = TestClient(app)
+        response = client.get(f"/sessions/{temp_jsonl_file.stem}/tree")
+
+        assert response.status_code == 200
+        data = response.json()
+        children = data["tree"]["children"]
+
+        # Find indices
+        dir_idx = next(i for i, c in enumerate(children) if c["name"] == "zzz_dir")
+        file_idx = next(i for i, c in enumerate(children) if c["name"] == "aaa_file.txt")
+
+        # Directory should come before file despite alphabetical order
+        assert dir_idx < file_idx
+
+    def test_tree_returns_home_path(self, home_tmp_path, temp_jsonl_file):
+        """Test tree response includes home path for navigation."""
+        info, _ = add_session(temp_jsonl_file)
+        info.project_path = str(home_tmp_path)
+
+        client = TestClient(app)
+        response = client.get(f"/sessions/{temp_jsonl_file.stem}/tree")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "home" in data
+        assert data["home"] == str(Path.home())
+
+
 # Note: SSE endpoint streaming tests are skipped because TestClient
 # doesn't handle SSE event generators well. The endpoint is tested
 # manually and through integration tests.
