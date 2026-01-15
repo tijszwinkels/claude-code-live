@@ -1302,7 +1302,9 @@ async def get_session_file_tree(session_id: str, path: str | None = None) -> dic
     target_path = None
 
     if path:
-        # User requested specific path
+        # User requested specific path - expand ~ to home directory
+        if path.startswith("~"):
+            path = str(Path.home() / path[2:])
         target_path = Path(path).resolve()
 
         # Security: Ensure it's within home directory
@@ -1431,3 +1433,50 @@ async def get_file(path: str) -> FileResponse:
     except Exception as e:
         logger.error(f"Error reading file {path}: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
+
+
+class PathTypeResponse(BaseModel):
+    """Response for path type check."""
+
+    type: str  # "file" or "directory"
+
+
+@app.get("/api/path/type")
+async def check_path_type(path: str) -> PathTypeResponse:
+    """Check if a path exists and return its type (lightweight, no content fetching).
+
+    Args:
+        path: Absolute path to check. Supports ~ for home directory.
+
+    Returns:
+        PathTypeResponse with type "file" or "directory".
+
+    Raises:
+        HTTPException: 404 if path not found or outside home directory.
+    """
+    # Expand ~ to home directory
+    if path.startswith("~"):
+        path = str(Path.home() / path[2:])
+
+    file_path = Path(path)
+
+    # Security: Restrict to user's home directory
+    home_dir = Path.home()
+    try:
+        resolved_path = file_path.resolve()
+        resolved_path.relative_to(home_dir)
+    except ValueError:
+        # Outside home directory - return not found
+        raise HTTPException(status_code=404)
+
+    try:
+        if file_path.exists():
+            if file_path.is_file():
+                return PathTypeResponse(type="file")
+            elif file_path.is_dir():
+                return PathTypeResponse(type="directory")
+        raise HTTPException(status_code=404)
+    except HTTPException:
+        raise
+    except (PermissionError, OSError):
+        raise HTTPException(status_code=404)

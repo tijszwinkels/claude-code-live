@@ -1,7 +1,7 @@
 
 import { dom, state } from './state.js';
 import { isMobile, copyToClipboard } from './utils.js';
-import { openRightPane, syncTreeToFile } from './filetree.js';
+import { openRightPane, syncTreeToFile, loadFileTree } from './filetree.js';
 
 // Initialize preview pane width
 export function initPreviewPane() {
@@ -40,17 +40,41 @@ export function initPreviewPane() {
     });
 
     // Click on file paths to open preview (except copy button)
-    document.addEventListener('click', function(e) {
+    // This handles both explicit file-tool-fullpath elements and any text that looks like a file path
+    document.addEventListener('click', async function(e) {
         // Skip if clicking the copy button
         if (e.target.closest('.copy-btn')) return;
 
-        const fullpath = e.target.closest('.file-tool-fullpath[data-copy-path]');
-        if (!fullpath) return;
+        // Skip if clicking links (let them navigate normally)
+        if (e.target.closest('a')) return;
 
-        e.preventDefault();
-        e.stopPropagation();
-        const path = fullpath.dataset.copyPath;
-        openPreviewPane(path);
+        // Skip if user has selected text (they're trying to copy)
+        const selection = window.getSelection();
+        if (selection && selection.toString().length > 0) return;
+
+        // First, check for explicit file-tool-fullpath elements (highest priority)
+        const fullpath = e.target.closest('.file-tool-fullpath[data-copy-path]');
+        if (fullpath) {
+            e.preventDefault();
+            e.stopPropagation();
+            const path = fullpath.dataset.copyPath;
+            openPreviewPane(path);
+            return;
+        }
+
+        // Otherwise, try to detect file path from clicked text
+        const filePath = extractFilePathFromClick(e);
+        if (filePath) {
+            // Check path type and handle accordingly (silently fail if not found)
+            const pathType = await getPathType(filePath);
+            if (pathType === 'file') {
+                openPreviewPane(filePath);
+            } else if (pathType === 'directory' && state.activeSessionId) {
+                // Navigate file tree to this directory
+                openRightPane();
+                loadFileTree(state.activeSessionId, filePath);
+            }
+        }
     });
 
     // Preview pane resize handle
@@ -217,5 +241,176 @@ function updateViewToggleLabel() {
     const label = dom.previewViewToggle.querySelector('.toggle-label');
     if (label) {
         label.textContent = dom.previewViewCheckbox.checked ? 'Rendered' : 'Source';
+    }
+}
+
+/**
+ * Extract a file path from clicked text.
+ * Tries to find a file path pattern in or around the clicked element.
+ * Returns null if no valid file path is found.
+ */
+function extractFilePathFromClick(event) {
+    const target = event.target;
+
+    // Get the text content of the clicked element or its innermost text node
+    let text = '';
+
+    // If we clicked directly on a text node's parent, get that text
+    if (target.nodeType === Node.ELEMENT_NODE) {
+        // Try to get the specific text at the click position using Range
+        const clickedText = getTextAtPoint(event.clientX, event.clientY);
+        if (clickedText) {
+            text = clickedText;
+        } else {
+            // Fall back to element's text content
+            text = target.textContent || '';
+        }
+    }
+
+    if (!text) return null;
+
+    // Try to extract a file path from the text
+    return findFilePathInText(text);
+}
+
+/**
+ * Get the text content at a specific point using document.caretPositionFromPoint
+ * or document.caretRangeFromPoint for browser compatibility.
+ */
+function getTextAtPoint(x, y) {
+    let range;
+    let textNode;
+    let offset;
+
+    // Try caretPositionFromPoint (Firefox) or caretRangeFromPoint (Chrome/Safari)
+    if (document.caretPositionFromPoint) {
+        const pos = document.caretPositionFromPoint(x, y);
+        if (pos && pos.offsetNode) {
+            textNode = pos.offsetNode;
+            offset = pos.offset;
+        }
+    } else if (document.caretRangeFromPoint) {
+        range = document.caretRangeFromPoint(x, y);
+        if (range) {
+            textNode = range.startContainer;
+            offset = range.startOffset;
+        }
+    }
+
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+        return null;
+    }
+
+    const fullText = textNode.textContent || '';
+
+    // Find word boundaries around the click position, expanding to capture full file path
+    // Include characters common in file paths: letters, numbers, /, ., -, _, ~
+    let start = offset;
+    let end = offset;
+
+    // Path characters (don't include : since we want to stop before line numbers)
+    const pathChars = /[a-zA-Z0-9\/._\-~]/;
+
+    // Expand left
+    while (start > 0 && pathChars.test(fullText[start - 1])) {
+        start--;
+    }
+
+    // Expand right
+    while (end < fullText.length && pathChars.test(fullText[end])) {
+        end++;
+    }
+
+    const word = fullText.substring(start, end);
+    return word.length > 0 ? word : null;
+}
+
+/**
+ * Find a file path pattern in text.
+ * Returns the path if found, null otherwise.
+ */
+function findFilePathInText(text) {
+    // Skip if text starts with http:// or https:// - it's a URL
+    if (/^https?:\/\//i.test(text)) {
+        return null;
+    }
+
+    // Common file path patterns:
+    // 1. Absolute path: /home/user/file.txt or /var/log/file.log
+    // 2. Home-relative: ~/file.txt or ~/.config/file
+    // 3. Relative with directories: src/components/file.tsx, ./file.txt, ../file.txt
+
+    // Pattern explanation:
+    // - Starts with /, ~/, ./, or ../
+    // - Or looks like a relative path with at least one directory separator
+    // - Contains valid path characters
+    // - Has some minimum length to avoid false positives
+
+    // First, try to match patterns that start with explicit path indicators
+    const explicitPathPattern = /^(\/|~\/|\.\/)[\w.\-\/]+/;
+    const explicitMatch = text.match(explicitPathPattern);
+    if (explicitMatch) {
+        return cleanFilePath(explicitMatch[0]);
+    }
+
+    // Try to match relative paths with directory structure (must have at least one /)
+    // This catches things like: src/file.ts, components/Button.tsx
+    const relativePathPattern = /^[\w.\-]+\/[\w.\-\/]+/;
+    const relativeMatch = text.match(relativePathPattern);
+    if (relativeMatch) {
+        // Only return if it looks like a real file path (has a file extension or ends reasonably)
+        const path = relativeMatch[0];
+        if (looksLikeFilePath(path)) {
+            return cleanFilePath(path);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Clean up a file path - remove trailing punctuation, etc.
+ */
+function cleanFilePath(path) {
+    // Remove trailing punctuation that might have been captured
+    return path.replace(/[,;:!?'")\]}>]+$/, '');
+}
+
+/**
+ * Check if a string looks like a real file path.
+ * Helps avoid false positives on random text.
+ */
+function looksLikeFilePath(text) {
+    // Has a file extension
+    if (/\.\w{1,10}$/.test(text)) {
+        return true;
+    }
+
+    // Is a known config/dotfile pattern
+    if (/\/\.\w+/.test(text)) {
+        return true;
+    }
+
+    // Ends with a directory-like name (all lowercase or common patterns)
+    if (/\/[a-z_\-]+$/.test(text)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Get the type of a path on the server.
+ * Returns "file", "directory", or null if not found.
+ * Never throws - returns null on any error.
+ */
+async function getPathType(path) {
+    try {
+        const response = await fetch(`/api/path/type?path=${encodeURIComponent(path)}`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.type;  // "file" or "directory"
+    } catch {
+        return null;
     }
 }

@@ -673,6 +673,60 @@ Normal **bold** text.
         assert "<strong>bold</strong>" in rendered
 
 
+class TestPathTypeAPI:
+    """Tests for the path type check API endpoint."""
+
+    def test_file_returns_type_file(self, home_tmp_path):
+        """Test checking an existing file returns type 'file'."""
+        test_file = home_tmp_path / "test.py"
+        test_file.write_text("print('hello')")
+
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path={test_file}")
+
+        assert response.status_code == 200
+        assert response.json()["type"] == "file"
+
+    def test_directory_returns_type_directory(self, home_tmp_path):
+        """Test checking a directory returns type 'directory'."""
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path={home_tmp_path}")
+
+        assert response.status_code == 200
+        assert response.json()["type"] == "directory"
+
+    def test_not_exists_returns_404(self, home_tmp_path):
+        """Test checking a non-existent path returns 404."""
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path={home_tmp_path}/nonexistent.py")
+
+        assert response.status_code == 404
+
+    def test_outside_home_returns_404(self):
+        """Test that paths outside home directory return 404."""
+        client = TestClient(app)
+        response = client.get("/api/path/type?path=/etc/passwd")
+
+        assert response.status_code == 404
+
+    def test_tilde_expansion(self, home_tmp_path):
+        """Test tilde expansion for home directory."""
+        from pathlib import Path
+
+        home = Path.home()
+        test_file = home_tmp_path / "tilde_test.txt"
+        test_file.write_text("test")
+
+        # Get the path relative to home
+        relative_path = test_file.relative_to(home)
+
+        client = TestClient(app)
+        response = client.get(f"/api/path/type?path=~/{relative_path}")
+
+        assert response.status_code == 200
+        assert response.json()["type"] == "file"
+
+
 # Note: SSE endpoint streaming tests are skipped because TestClient
 # doesn't handle SSE event generators well. The endpoint is tested
 # manually and through integration tests.
