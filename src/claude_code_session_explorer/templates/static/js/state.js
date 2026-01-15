@@ -125,6 +125,11 @@ export function initDom() {
     dom.copySessionBtn = document.getElementById('copy-session-btn');
     dom.flashMessage = document.getElementById('flash-message');
     dom.themeToggle = document.getElementById('theme-toggle');
+    dom.rightSidebarToggle = document.getElementById('right-sidebar-toggle');
+    dom.viewSwitcher = document.getElementById('view-switcher');
+    dom.showPreviewBtn = document.getElementById('show-preview-btn');
+    dom.showTreeBtn = document.getElementById('show-tree-btn');
+    dom.fileTreeContent = document.getElementById('file-tree-content');
     // Modal elements
     dom.newSessionModal = document.getElementById('new-session-modal');
     dom.newSessionForm = document.getElementById('new-session-form');

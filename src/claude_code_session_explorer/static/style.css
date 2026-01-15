@@ -469,3 +469,135 @@ body { padding-top: 56px; padding-bottom: 100px; }
 [data-theme="dark"] .markdown-preview tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
 [data-theme="dark"] .markdown-preview tbody tr:hover { background: rgba(66, 165, 245, 0.08); }
 [data-theme="dark"] .markdown-preview tbody tr:nth-child(even):hover { background: rgba(66, 165, 245, 0.1); }
+
+/* File Tree Styles */
+.file-tree-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    display: none;
+}
+.file-tree-content.active {
+    display: block;
+}
+
+/* Tree Node Styles */
+.tree-root {
+    margin: 0;
+    padding: 0;
+}
+.tree-item {
+    list-style: none;
+}
+.tree-summary {
+    cursor: pointer;
+    padding: 4px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--text-color);
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tree-summary:hover {
+    background: rgba(0,0,0,0.04);
+}
+.tree-summary.selected {
+    background: rgba(25, 118, 210, 0.1);
+    color: var(--user-border);
+}
+.tree-icon {
+    width: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.tree-children {
+    padding-left: 14px; /* Indentation */
+    margin: 0;
+    list-style: none;
+    border-left: 1px solid rgba(0,0,0,0.05);
+    margin-left: 10px;
+}
+details > summary {
+    list-style: none;
+}
+details > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Icons using simple unicode/emoji for now, or could use SVG */
+.tree-icon-folder::before {
+    content: "📁";
+    opacity: 0.7;
+}
+details[open] > summary .tree-icon-folder::before {
+    content: "📂";
+    opacity: 1;
+}
+.tree-icon-file::before {
+    content: "📄";
+    opacity: 0.7;
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .tree-summary:hover {
+    background: rgba(255,255,255,0.04);
+}
+[data-theme="dark"] .tree-summary.selected {
+    background: rgba(25, 118, 210, 0.2);
+}
+[data-theme="dark"] .tree-children {
+    border-left-color: rgba(255,255,255,0.05);
+}
+
+/* Right Sidebar Toggle */
+.right-sidebar-toggle {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    margin-left: auto; /* Push to right */
+}
+.right-sidebar-toggle:hover {
+    background: rgba(255,255,255,0.2);
+}
+
+/* View Switcher in Preview Header */
+.view-switcher {
+    display: flex;
+    background: rgba(0,0,0,0.05);
+    border-radius: 6px;
+    padding: 2px;
+    margin-right: 8px;
+}
+.switcher-btn {
+    border: none;
+    background: transparent;
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--text-muted);
+}
+.switcher-btn.active {
+    background: var(--card-bg);
+    color: var(--text-color);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    font-weight: 500;
+}
+[data-theme="dark"] .view-switcher {
+    background: rgba(255,255,255,0.05);
+}
+[data-theme="dark"] .switcher-btn.active {
+    background: #333;
+}

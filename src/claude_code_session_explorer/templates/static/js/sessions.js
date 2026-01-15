@@ -12,6 +12,7 @@ import {
     updateSidebarState, updateUserNavButtons
 } from './ui.js';
 import { closePreviewPane, openPreviewPane } from './preview.js';
+import { loadFileTree } from './filetree.js';
 
 // Forward declaration for circular dependency - will be set by messaging.js
 let updateInputBarUI = () => {};
@@ -412,6 +413,9 @@ export function switchToSession(sessionId, scrollToBottom = false) {
     if (savedPreviewPath) {
         openPreviewPane(savedPreviewPath);
     }
+    
+    // Always load file tree for the session
+    loadFileTree(sessionId);
 
     if (scrollToBottom) {
         requestAnimationFrame(function() {

@@ -2,6 +2,7 @@
 
 import { dom, state } from './state.js';
 import { isMobile, copyToClipboard } from './utils.js';
+import { switchView } from './filetree.js';
 
 // Initialize preview pane width
 export function initPreviewPane() {
@@ -108,6 +109,11 @@ export async function openPreviewPane(filePath) {
     dom.inputBar.classList.add('preview-open');
     dom.floatingControls.classList.add('preview-open');
     state.previewPaneOpen = true;
+
+    // Ensure we are in preview mode (not tree mode)
+    if (typeof switchView === 'function') {
+        switchView('preview');
+    }
 
     try {
         const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);

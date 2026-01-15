@@ -17,6 +17,7 @@
             <span id="status-text">Connecting...</span>
         </div>
         <div class="session-title-bar" id="session-title-bar"></div>
+        <button class="right-sidebar-toggle" id="right-sidebar-toggle" title="Toggle file tree">🗂️</button>
         <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">&#9790;</button>
     </div>
 
@@ -69,6 +70,10 @@
                 <span class="preview-path" id="preview-path"></span>
             </div>
             <div class="preview-actions">
+                <div class="view-switcher" id="view-switcher" style="display: none;">
+                    <button class="switcher-btn active" id="show-preview-btn">File</button>
+                    <button class="switcher-btn" id="show-tree-btn">Tree</button>
+                </div>
                 <label class="preview-view-toggle" id="preview-view-toggle" style="display: none;" title="Toggle between rendered and source view">
                     <input type="checkbox" id="preview-view-checkbox" checked>
                     <span class="toggle-label">Rendered</span>
@@ -78,6 +83,7 @@
             </div>
         </div>
         <div class="preview-content" id="preview-content"></div>
+        <div class="file-tree-content" id="file-tree-content"></div>
         <div class="preview-status" id="preview-status"></div>
         <div class="preview-resize-handle" id="preview-resize-handle"></div>
     </div>
