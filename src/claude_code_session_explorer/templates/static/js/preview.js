@@ -1,8 +1,7 @@
-// Preview pane module - file preview functionality
 
 import { dom, state } from './state.js';
 import { isMobile, copyToClipboard } from './utils.js';
-import { switchView } from './filetree.js';
+import { openRightPane } from './filetree.js';
 
 // Initialize preview pane width
 export function initPreviewPane() {
@@ -12,22 +11,26 @@ export function initPreviewPane() {
     dom.previewCloseBtn.addEventListener('click', closePreviewPane);
 
     // Copy path button
-    dom.previewCopyBtn.addEventListener('click', function() {
-        if (state.previewFilePath) {
-            copyToClipboard(state.previewFilePath, null);
-            const originalText = dom.previewCopyBtn.textContent;
-            dom.previewCopyBtn.textContent = 'Copied!';
-            setTimeout(() => dom.previewCopyBtn.textContent = originalText, 1500);
-        }
-    });
+    if (dom.previewCopyBtn) {
+        dom.previewCopyBtn.addEventListener('click', function() {
+            if (state.previewFilePath) {
+                copyToClipboard(state.previewFilePath, null);
+                const originalText = dom.previewCopyBtn.textContent;
+                dom.previewCopyBtn.textContent = 'Copied!';
+                setTimeout(() => dom.previewCopyBtn.textContent = originalText, 1500);
+            }
+        });
+    }
 
     // View toggle for markdown files
-    dom.previewViewCheckbox.addEventListener('change', function() {
-        updateViewToggleLabel();
-        if (state.previewFileData) {
-            renderPreviewContent(state.previewFileData, dom.previewViewCheckbox.checked);
-        }
-    });
+    if (dom.previewViewCheckbox) {
+        dom.previewViewCheckbox.addEventListener('change', function() {
+            updateViewToggleLabel();
+            if (state.previewFileData) {
+                renderPreviewContent(state.previewFileData, dom.previewViewCheckbox.checked);
+            }
+        });
+    }
 
     // Escape key to close preview pane
     document.addEventListener('keydown', function(e) {
@@ -68,9 +71,9 @@ export function initPreviewPane() {
         const delta = state.previewStartX - e.clientX;  // Note: reversed because resizing from left edge
         let newWidth = state.previewStartWidth + delta;
 
-        // Clamp width: min 300px, max 60% of viewport
-        const maxWidth = window.innerWidth * 0.6;
-        newWidth = Math.max(300, Math.min(maxWidth, newWidth));
+        // Clamp width: min 500px (split view), max 90% of viewport
+        const maxWidth = window.innerWidth * 0.9;
+        newWidth = Math.max(500, Math.min(maxWidth, newWidth));
 
         state.previewPaneWidth = newWidth;
         document.documentElement.style.setProperty('--preview-pane-width', newWidth + 'px');
@@ -97,23 +100,16 @@ export async function openPreviewPane(filePath) {
         state.sessionPreviewPaths.set(state.activeSessionId, filePath);
     }
 
-    dom.previewFilename.textContent = filename;
-    dom.previewPath.textContent = filePath;
-    dom.previewContent.innerHTML = '';
-    dom.previewViewToggle.style.display = 'none';  // Hide toggle until we know if it's markdown
+    if (dom.previewFilename) dom.previewFilename.textContent = filename;
+    if (dom.previewPath) dom.previewPath.textContent = filePath;
+    if (dom.previewContent) dom.previewContent.innerHTML = '';
+    if (dom.previewViewToggle) dom.previewViewToggle.style.display = 'none';  // Hide toggle until we know if it's markdown
+    if (dom.previewCopyBtn) dom.previewCopyBtn.style.display = 'block';
+    
     showPreviewStatus('loading', 'Loading...');
 
-    // Open the pane
-    dom.previewPane.classList.add('open');
-    dom.mainContent.classList.add('preview-open');
-    dom.inputBar.classList.add('preview-open');
-    dom.floatingControls.classList.add('preview-open');
-    state.previewPaneOpen = true;
-
-    // Ensure we are in preview mode (not tree mode)
-    if (typeof switchView === 'function') {
-        switchView('preview');
-    }
+    // Open the pane (ensures parent classes are set)
+    openRightPane();
 
     try {
         const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
@@ -128,14 +124,14 @@ export async function openPreviewPane(filePath) {
         state.previewFileData = data;
 
         // Show toggle for markdown files
-        if (data.rendered_html) {
+        if (data.rendered_html && dom.previewViewToggle) {
             dom.previewViewToggle.style.display = '';
             dom.previewViewCheckbox.checked = true;
             updateViewToggleLabel();
         }
 
         // Render content with syntax highlighting
-        renderPreviewContent(data, dom.previewViewCheckbox.checked);
+        renderPreviewContent(data, dom.previewViewCheckbox ? dom.previewViewCheckbox.checked : true);
 
         if (data.truncated) {
             showPreviewStatus('warning', 'File truncated (showing first 1MB)');
@@ -163,6 +159,8 @@ export function closePreviewPane(clearSessionAssociation = true) {
 }
 
 function renderPreviewContent(data, showRendered = true) {
+    if (!dom.previewContent) return;
+    
     dom.previewContent.innerHTML = '';
 
     // If we have pre-rendered HTML (markdown) and showRendered is true, display that
@@ -201,15 +199,20 @@ function renderPreviewContent(data, showRendered = true) {
 }
 
 function showPreviewStatus(type, message) {
+    if (!dom.previewStatus) return;
     dom.previewStatus.className = 'preview-status visible ' + type;
     dom.previewStatus.textContent = message;
 }
 
 function hidePreviewStatus() {
+    if (!dom.previewStatus) return;
     dom.previewStatus.className = 'preview-status';
 }
 
 function updateViewToggleLabel() {
+    if (!dom.previewViewToggle) return;
     const label = dom.previewViewToggle.querySelector('.toggle-label');
-    label.textContent = dom.previewViewCheckbox.checked ? 'Rendered' : 'Source';
+    if (label) {
+        label.textContent = dom.previewViewCheckbox.checked ? 'Rendered' : 'Source';
+    }
 }

@@ -1292,7 +1292,7 @@ async def get_session_file_tree(session_id: str) -> dict:
 
     try:
         tree = _get_directory_structure(project_path)
-        return {"tree": tree}
+        return {"tree": tree, "home": str(Path.home())}
     except Exception as e:
         logger.error(f"Error generating file tree for {session_id}: {e}")
         return {"tree": None, "error": str(e)}

@@ -126,9 +126,9 @@ export function initDom() {
     dom.flashMessage = document.getElementById('flash-message');
     dom.themeToggle = document.getElementById('theme-toggle');
     dom.rightSidebarToggle = document.getElementById('right-sidebar-toggle');
-    dom.viewSwitcher = document.getElementById('view-switcher');
-    dom.showPreviewBtn = document.getElementById('show-preview-btn');
-    dom.showTreeBtn = document.getElementById('show-tree-btn');
+    dom.previewBackBtn = document.getElementById('preview-back-btn');
+    dom.treeCollapseBtn = document.getElementById('tree-collapse-btn');
+    dom.treeExpandBtn = document.getElementById('tree-expand-btn');
     dom.fileTreeContent = document.getElementById('file-tree-content');
     // Modal elements
     dom.newSessionModal = document.getElementById('new-session-modal');
@@ -159,7 +159,8 @@ export const state = {
     sidebarOpen: localStorage.getItem('sidebarOpen') !== 'false',
     sidebarWidth: parseInt(localStorage.getItem('sidebarWidth')) || 280,
     previewPaneOpen: false,
-    previewPaneWidth: parseInt(localStorage.getItem('previewPaneWidth')) || 400,
+    // Default wider pane for split view
+    previewPaneWidth: parseInt(localStorage.getItem('previewPaneWidth')) || 700,
     previewFilePath: null,
     previewFileData: null,
 
