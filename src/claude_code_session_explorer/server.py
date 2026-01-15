@@ -11,7 +11,7 @@ from typing import AsyncGenerator
 
 import watchfiles
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -738,6 +738,30 @@ async def index() -> HTMLResponse:
     template = get_template("live.html")
     html = template.render(css=_css)
     return HTMLResponse(content=html)
+
+
+@app.get("/static/js/{filename}")
+async def serve_js(filename: str) -> Response:
+    """Serve JavaScript modules from the static/js directory."""
+    from importlib.resources import files
+
+    # Validate filename (only allow .js files, no path traversal)
+    if not filename.endswith(".js") or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    try:
+        content = (
+            files("claude_code_session_explorer")
+            .joinpath("templates", "static", "js", filename)
+            .read_text()
+        )
+        return Response(
+            content=content,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache"},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 @app.get("/sessions")

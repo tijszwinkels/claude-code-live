@@ -63,13 +63,14 @@ class TestServerEndpoints:
         assert "--bg-color" in response.text
 
     def test_index_includes_sse_script(self, temp_jsonl_file):
-        """Test that index includes SSE client script."""
+        """Test that index includes JS module script tag."""
         add_session(temp_jsonl_file)
         client = TestClient(app)
 
         response = client.get("/")
-        assert "EventSource" in response.text
-        assert "/events" in response.text
+        # JS is now loaded as an ES module
+        assert 'type="module"' in response.text
+        assert 'src="/static/js/app.js"' in response.text
 
     def test_index_includes_sidebar(self, temp_jsonl_file):
         """Test that index includes sidebar elements."""
@@ -409,6 +410,50 @@ class TestBackendsEndpoint:
         data = response.json()
         assert "models" in data
         assert isinstance(data["models"], list)
+
+
+class TestStaticJsEndpoint:
+    """Tests for the static JS file serving endpoint."""
+
+    def test_serve_js_app_module(self):
+        """Test serving the main app.js module."""
+        client = TestClient(app)
+        response = client.get("/static/js/app.js")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/javascript"
+        assert "import" in response.text  # ES module syntax
+
+    def test_serve_js_state_module(self):
+        """Test serving the state.js module."""
+        client = TestClient(app)
+        response = client.get("/static/js/state.js")
+        assert response.status_code == 200
+        assert "export" in response.text  # ES module syntax
+
+    def test_serve_js_utils_module(self):
+        """Test serving the utils.js module."""
+        client = TestClient(app)
+        response = client.get("/static/js/utils.js")
+        assert response.status_code == 200
+        assert "export" in response.text
+
+    def test_serve_js_not_found(self):
+        """Test 404 for non-existent JS file."""
+        client = TestClient(app)
+        response = client.get("/static/js/nonexistent.js")
+        assert response.status_code == 404
+
+    def test_serve_js_path_traversal_blocked(self):
+        """Test that path traversal is blocked."""
+        client = TestClient(app)
+        response = client.get("/static/js/../../../etc/passwd.js")
+        assert response.status_code == 404
+
+    def test_serve_js_non_js_extension_blocked(self):
+        """Test that non-.js files are blocked."""
+        client = TestClient(app)
+        response = client.get("/static/js/app.py")
+        assert response.status_code == 404
 
 
 class TestFilePreviewAPI:

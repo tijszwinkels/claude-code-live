@@ -1,0 +1,89 @@
+// Main application entry point
+
+import { initDom, dom, state } from './state.js';
+import { copyToClipboard } from './utils.js';
+import {
+    initSidebar, initThemeToggle, initAutoSwitch, initStatusColors,
+    initAutoScroll, initScrollButtons, initUserNavigation, initSearch
+} from './ui.js';
+import { initPreviewPane } from './preview.js';
+import { initSortSelect, initCopyButtons, reorderSidebar } from './sessions.js';
+import { initMessaging } from './messaging.js';
+import { initModal } from './modal.js';
+import { connect, initVisibilityHandler } from './connection.js';
+
+// Initialize the application
+function init() {
+    // Initialize DOM element references
+    initDom();
+
+    // Initialize UI components
+    initSidebar();
+    initThemeToggle();
+    initAutoSwitch();
+    initStatusColors();
+    initAutoScroll();
+    initScrollButtons();
+    initUserNavigation();
+    initSearch();
+
+    // Initialize preview pane
+    initPreviewPane();
+
+    // Initialize session management
+    initSortSelect(reorderSidebar);
+    initCopyButtons();
+
+    // Initialize messaging (input bar)
+    initMessaging();
+
+    // Initialize modal
+    initModal();
+
+    // Initialize global click handler for copy buttons (event delegation)
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.copy-btn');
+        if (!btn) return;
+
+        e.stopPropagation();
+        e.preventDefault();
+
+        // Check if this is a file path copy button
+        const fullpath = btn.closest('.file-tool-fullpath[data-copy-path]');
+        if (fullpath) {
+            const path = fullpath.dataset.copyPath;
+            if (path) {
+                copyToClipboard(path, btn);
+            }
+            return;
+        }
+
+        // Otherwise it's a code block copy button
+        const wrapper = btn.closest('.copy-wrapper');
+        if (wrapper) {
+            const pre = wrapper.querySelector('pre');
+            if (pre) {
+                copyToClipboard(pre.textContent, btn);
+            } else {
+                // Fallback: copy wrapper text content (excluding button)
+                const clone = wrapper.cloneNode(true);
+                const btnClone = clone.querySelector('.copy-btn');
+                if (btnClone) btnClone.remove();
+                copyToClipboard(clone.textContent.trim(), btn);
+            }
+        }
+    });
+
+    // Connect to SSE and start receiving events
+    connect();
+
+    // Initialize visibility change handler for reconnection
+    initVisibilityHandler();
+}
+
+// Run initialization when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
