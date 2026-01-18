@@ -1,29 +1,50 @@
-# Claude Code Instructions
+# CLAUDE.md
 
-## Development
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-### Test-Driven Development (TDD)
+## Project Overview
 
-Always write tests before implementing new functionality:
+Live-updating transcript viewer and static exporter for Claude Code and OpenCode sessions. Optionally functions as a **web-based frontend** (like Conductor) for sending messages and forking sessions. Enable with `--enable-send` and `--fork` flags.
 
-1. **Write failing tests first** - Define expected behavior in tests before writing code
-2. **Run tests to confirm they fail** - `uv run pytest tests/ -v`
-3. **Implement the minimal code** to make tests pass
-4. **Refactor** while keeping tests green
-5. **Run full test suite** before committing: `uv run pytest`
-
-### Running Tests
+## Commands
 
 ```bash
-# Run all tests
-uv run pytest
-
-# Run specific test file
-uv run pytest tests/test_export.py -v
-
-# Run with coverage
-uv run pytest --cov=src/claude_code_session_explorer
+uv sync                                    # Install dependencies
+uv run pytest                              # Run all tests
+uv run pytest tests/test_export.py -v      # Run specific test
+uv run claude-code-session-explorer --debug # Run dev server
 ```
+
+## Architecture
+
+See `src/claude_code_session_explorer/`:
+- **`backends/`** - Pluggable backend system (`protocol.py` defines interfaces, `claude_code/` and `opencode/` implement them)
+- **`server.py`** - FastAPI app with SSE streaming, session management, file tree API
+- **`export.py`** - Static HTML/Markdown generation with gist upload
+- **`templates/`** - Jinja2 templates and modular JS frontend
+
+## Features
+
+- **Live transcript streaming** - `server.py` (SSE via `/events`), `templates/static/js/messaging.js`
+- **Session discovery** - `backends/*/discovery.py`, `sessions.py`
+- **Session tabs** - `templates/static/js/sessions.js`
+- **File tree navigator** - `server.py` (`/sessions/{id}/tree`), `templates/static/js/filetree.js`
+- **File preview modal** - `server.py` (`/api/file`), `templates/static/js/preview.js`
+- **Clickable file paths** - `backends/shared/rendering.py` (`make_paths_clickable`)
+- **Send messages to sessions** - `server.py` (`/sessions/{id}/send`), `templates/static/js/messaging.js`
+- **Fork sessions** - `server.py` (`/sessions/{id}/fork`), `backends/*/cli.py`
+- **New session creation** - `server.py` (`/sessions/new`)
+- **Thinking level detection** - `backends/thinking.py`
+- **Static HTML export** - `export.py`
+- **Markdown export** - `export.py`
+- **Gist upload** - `export.py` (`upload_to_gist`)
+- **Token usage/cost tracking** - `backends/*/pricing.py`
+- **Multi-backend support** - `backends/multi.py`, `backends/registry.py`
+
+## Adding a Backend
+
+1. Create `backends/newbackend/` implementing `CodingToolBackend` protocol
+2. Register in `backends/registry.py`
 
 ## Commit Transcripts
 
