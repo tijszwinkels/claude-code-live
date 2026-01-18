@@ -3,6 +3,7 @@ import { dom, state } from './state.js';
 import { isMobile, copyToClipboard } from './utils.js';
 import { openRightPane, syncTreeToFile, loadFileTree } from './filetree.js';
 import { showFlash } from './ui.js';
+import { startFileWatch, stopFileWatch } from './filewatch.js';
 
 // Initialize preview pane width
 export function initPreviewPane() {
@@ -29,6 +30,32 @@ export function initPreviewPane() {
             updateViewToggleLabel();
             if (state.previewFileData) {
                 renderPreviewContent(state.previewFileData, dom.previewViewCheckbox.checked);
+            }
+        });
+    }
+
+    // Follow checkbox for auto-scroll on new content
+    if (dom.previewFollowCheckbox) {
+        dom.previewFollowCheckbox.checked = state.previewFollow;
+        dom.previewFollowCheckbox.addEventListener('change', function() {
+            state.previewFollow = dom.previewFollowCheckbox.checked;
+            localStorage.setItem('previewFollow', state.previewFollow);
+        });
+    }
+
+    // Auto-uncheck Follow when user scrolls up in preview content
+    if (dom.previewContent) {
+        dom.previewContent.addEventListener('scroll', function() {
+            if (!state.previewFollow) return;
+
+            // Check if user scrolled up (not at bottom)
+            const el = dom.previewContent;
+            const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+
+            if (!isAtBottom && dom.previewFollowCheckbox) {
+                state.previewFollow = false;
+                dom.previewFollowCheckbox.checked = false;
+                localStorage.setItem('previewFollow', 'false');
             }
         });
     }
@@ -124,9 +151,21 @@ export function initPreviewPane() {
 }
 
 export async function openPreviewPane(filePath) {
+    // Stop any existing file watch
+    stopFileWatch();
+
     state.previewFilePath = filePath;
     state.previewFileData = null;
     const filename = filePath.split('/').pop();
+
+    // Auto-enable Follow for log-like files (.log, .jsonl)
+    const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+    if (ext === 'log' || ext === 'jsonl') {
+        state.previewFollow = true;
+        if (dom.previewFollowCheckbox) {
+            dom.previewFollowCheckbox.checked = true;
+        }
+    }
 
     // Track this preview for the current session
     if (state.activeSessionId) {
@@ -137,49 +176,109 @@ export async function openPreviewPane(filePath) {
     if (dom.previewPath) dom.previewPath.textContent = filePath;
     if (dom.previewContent) dom.previewContent.innerHTML = '';
     if (dom.previewViewToggle) dom.previewViewToggle.style.display = 'none';  // Hide toggle until we know if it's markdown
+    if (dom.previewFollowToggle) dom.previewFollowToggle.style.display = '';  // Show Follow toggle
     if (dom.previewCopyBtn) dom.previewCopyBtn.style.display = 'block';
-    
+
     showPreviewStatus('loading', 'Loading...');
 
     // Open the pane (ensures parent classes are set)
     openRightPane();
-    
+
     // Sync tree to this file
     syncTreeToFile(filePath);
 
-    try {
-        const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
-        const data = await response.json();
+    // Start watching the file via SSE
+    // Pass follow option - determines whether to detect appends or always send full file
+    startFileWatch(filePath, {
+        onInitial: function(data) {
+            // Store data for view toggle (adapt SSE data to match API response format)
+            state.previewFileData = {
+                content: data.content,
+                truncated: data.truncated,
+                size: data.size
+            };
 
-        if (!response.ok) {
-            showPreviewStatus('error', data.detail || 'Failed to load file');
-            return;
+            // Render content with syntax highlighting
+            renderPreviewContent(state.previewFileData, dom.previewViewCheckbox ? dom.previewViewCheckbox.checked : true);
+
+            if (data.truncated) {
+                showPreviewStatus('warning', 'File truncated (showing first 1MB)');
+            } else {
+                hidePreviewStatus();
+            }
+
+            // Scroll to bottom if Follow is enabled
+            if (state.previewFollow && dom.previewContent) {
+                dom.previewContent.scrollTop = dom.previewContent.scrollHeight;
+            }
+        },
+        onAppend: function(data) {
+            // Append new content to existing preview
+            if (!dom.previewContent) return;
+
+            const pre = dom.previewContent.querySelector('pre');
+            const code = pre ? pre.querySelector('code') : null;
+
+            if (code) {
+                // Append to existing code block
+                code.textContent += data.content;
+
+                // Re-apply highlighting
+                if (window.hljs) {
+                    hljs.highlightElement(code);
+                }
+            }
+
+            // Update stored data
+            if (state.previewFileData) {
+                state.previewFileData.content += data.content;
+            }
+
+            // Scroll to bottom if Follow is enabled
+            if (state.previewFollow && dom.previewContent) {
+                dom.previewContent.scrollTop = dom.previewContent.scrollHeight;
+            }
+        },
+        onReplace: function(data) {
+            // Full content replacement
+            state.previewFileData = {
+                content: data.content,
+                truncated: data.truncated,
+                size: data.size
+            };
+
+            // Save scroll position if not following
+            const scrollPos = dom.previewContent ? dom.previewContent.scrollTop : 0;
+
+            // Re-render content
+            renderPreviewContent(state.previewFileData, dom.previewViewCheckbox ? dom.previewViewCheckbox.checked : true);
+
+            if (data.truncated) {
+                showPreviewStatus('warning', 'File truncated (showing first 1MB)');
+            } else {
+                hidePreviewStatus();
+            }
+
+            // Restore scroll position or scroll to bottom
+            if (dom.previewContent) {
+                if (state.previewFollow) {
+                    dom.previewContent.scrollTop = dom.previewContent.scrollHeight;
+                } else {
+                    dom.previewContent.scrollTop = scrollPos;
+                }
+            }
+        },
+        onError: function(message) {
+            showPreviewStatus('error', message);
+            stopFileWatch();
         }
-
-        // Store data for view toggle
-        state.previewFileData = data;
-
-        // Show toggle for markdown files
-        if (data.rendered_html && dom.previewViewToggle) {
-            dom.previewViewToggle.style.display = '';
-            dom.previewViewCheckbox.checked = true;
-            updateViewToggleLabel();
-        }
-
-        // Render content with syntax highlighting
-        renderPreviewContent(data, dom.previewViewCheckbox ? dom.previewViewCheckbox.checked : true);
-
-        if (data.truncated) {
-            showPreviewStatus('warning', 'File truncated (showing first 1MB)');
-        } else {
-            hidePreviewStatus();
-        }
-    } catch (err) {
-        showPreviewStatus('error', 'Failed to load file: ' + err.message);
-    }
+    }, { follow: state.previewFollow });
 }
 
 export function closePreviewPane(clearSessionAssociation = true) {
+    // Stop file watching
+    stopFileWatch();
+
     dom.previewPane.classList.remove('open');
     dom.mainContent.classList.remove('preview-open');
     dom.inputBar.classList.remove('preview-open');

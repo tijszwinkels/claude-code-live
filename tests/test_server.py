@@ -1,5 +1,6 @@
 """Tests for the FastAPI server."""
 
+import asyncio
 import json
 import tempfile
 from pathlib import Path
@@ -725,6 +726,88 @@ class TestPathTypeAPI:
 
         assert response.status_code == 200
         assert response.json()["type"] == "file"
+
+
+class TestFileWatchAPI:
+    """Tests for the file watch SSE endpoint."""
+
+    def test_file_watch_not_found(self, home_tmp_path):
+        """Test 404 for non-existent file."""
+        client = TestClient(app)
+        response = client.get(f"/api/file/watch?path={home_tmp_path}/nonexistent.py")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+    def test_file_watch_directory_rejected(self, home_tmp_path):
+        """Test 400 for directories."""
+        client = TestClient(app)
+        response = client.get(f"/api/file/watch?path={home_tmp_path}")
+        assert response.status_code == 400
+        assert "not a file" in response.json()["detail"].lower()
+
+    def test_file_watch_path_traversal_blocked(self):
+        """Test 403 for paths outside home directory."""
+        client = TestClient(app)
+        response = client.get("/api/file/watch?path=/etc/passwd")
+        assert response.status_code == 403
+        assert "home directory" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_file_watch_initial_content(self, home_tmp_path):
+        """Test that initial content is sent on connect."""
+        import json
+        from unittest.mock import MagicMock
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        test_file = home_tmp_path / "test.txt"
+        test_file.write_text("initial content")
+
+        # Create a mock request with async is_disconnected method
+        mock_request = MagicMock()
+
+        async def mock_is_disconnected():
+            return False
+
+        mock_request.is_disconnected = mock_is_disconnected
+
+        # Get the first event from the generator
+        generator = _file_watch_generator(test_file, mock_request)
+        event = await generator.__anext__()
+
+        assert event["event"] == "initial"
+        data = json.loads(event["data"])
+        assert data["content"] == "initial content"
+        assert data["size"] == 15
+        assert data["truncated"] is False
+
+        # Clean up generator
+        await generator.aclose()
+
+    @pytest.mark.asyncio
+    async def test_file_watch_binary_rejected(self, home_tmp_path):
+        """Test binary file returns error event."""
+        import json
+        from unittest.mock import MagicMock
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        binary_file = home_tmp_path / "image.png"
+        binary_file.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x00")
+
+        # Create a mock request
+        mock_request = MagicMock()
+
+        # Get the first event from the generator
+        generator = _file_watch_generator(binary_file, mock_request)
+        event = await generator.__anext__()
+
+        assert event["event"] == "error"
+        data = json.loads(event["data"])
+        assert "binary" in data["message"].lower()
+
+        # Clean up generator
+        await generator.aclose()
 
 
 class TestSessionTreeAPI:
