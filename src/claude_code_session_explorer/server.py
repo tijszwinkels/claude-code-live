@@ -186,9 +186,20 @@ async def _summarize_session_async(session: SessionInfo, model: str | None = Non
     if _summarizer is None:
         return False
 
+    # Get the session-specific backend (MultiBackend can't build commands directly)
+    session_backend = get_backend_for_session(session.path)
+
+    # Create a summarizer with the correct backend for this session
+    session_summarizer = Summarizer(
+        backend=session_backend,
+        log_writer=_summarizer.log_writer,
+        prompt=_summarizer.prompt,
+        prompt_file=_summarizer.prompt_file,
+    )
+
     # Use idle model by default (for idle tracker callbacks)
     effective_model = model if model is not None else _idle_summary_model
-    result = await _summarizer.summarize(session, model=effective_model)
+    result = await session_summarizer.summarize(session, model=effective_model)
 
     # If summary was successful, broadcast the update
     if result.success:
@@ -478,6 +489,14 @@ async def _monitor_attached_process(info: SessionInfo) -> None:
         logger.error(f"Error monitoring attached process for {info.session_id}: {e}")
     finally:
         info.process = None
+
+        # Trigger immediate summarization only for NEW sessions (no summary yet)
+        # Idle tracker handles re-summarization after activity
+        if _summarizer is not None and not info.get_summary_path().exists():
+            session_model = get_session_model(info.path)
+            logger.info(f"Triggering summary for new session {info.session_id} with model {session_model}")
+            asyncio.create_task(_summarize_session_async(info, model=session_model))
+
         await broadcast_session_status(info.session_id)
 
 
@@ -591,11 +610,12 @@ async def run_cli_for_session(
         if not fork:
             info.process = None
 
-            # Trigger summarization if configured (cache is hot right after completion)
-            if _summarizer is not None:
+            # Trigger immediate summarization only for NEW sessions (no summary yet)
+            # Idle tracker handles re-summarization after activity
+            if _summarizer is not None and not info.get_summary_path().exists():
                 # Use the same model that was used for the conversation
                 session_model = get_session_model(info.path)
-                logger.info(f"Triggering summary for session {session_id} with model {session_model}")
+                logger.info(f"Triggering summary for new session {session_id} with model {session_model}")
                 asyncio.create_task(_summarize_session_async(info, model=session_model))
 
             # Process queue if messages waiting

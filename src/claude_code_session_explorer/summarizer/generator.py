@@ -88,12 +88,18 @@ class Summarizer:
 
         # Format prompt with session metadata
         prompt_template = get_prompt_template(self.prompt, self.prompt_file)
+        # Get session start time from tailer
+        try:
+            session_started_at = session.tailer.get_first_timestamp() or "Unknown"
+        except Exception:
+            session_started_at = "Unknown"
+
         prompt = format_prompt(
             template=prompt_template,
             session_id=session.session_id,
             project_path=session.project_path or "Unknown",
             generated_at=generated_at,
-            session_started_at=session.started_at or "Unknown",
+            session_started_at=session_started_at,
         )
 
         # Build resume command with --no-session-persistence
