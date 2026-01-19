@@ -198,10 +198,45 @@ export async function openPreviewPane(filePath) {
     // Sync tree to this file
     syncTreeToFile(filePath);
 
+    // For follow=false, fetch initial content via /api/file (gets markdown rendering)
+    // For follow=true, SSE initial event provides content (no markdown needed for logs)
+    if (!state.previewFollow) {
+        try {
+            const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
+            if (!response.ok) {
+                showPreviewStatus('error', `Failed to load: ${response.statusText}`);
+                return;
+            }
+            const data = await response.json();
+
+            state.previewFileData = data;
+
+            // Show view toggle if this is a markdown file with rendered HTML
+            if (dom.previewViewToggle) {
+                dom.previewViewToggle.style.display = data.rendered_html ? '' : 'none';
+            }
+
+            renderPreviewContent(data, dom.previewViewCheckbox ? dom.previewViewCheckbox.checked : true);
+
+            if (data.truncated) {
+                showPreviewStatus('warning', 'File truncated (showing first 1MB)');
+            } else {
+                hidePreviewStatus();
+            }
+        } catch (err) {
+            showPreviewStatus('error', `Failed to load: ${err.message}`);
+            return;
+        }
+    }
+
     // Start watching the file via SSE
-    // Pass follow option - determines whether to detect appends or always send full file
+    // follow=true: SSE provides initial content + append/replace events
+    // follow=false: SSE only notifies of changes, we refetch via /api/file
     startFileWatch(filePath, {
         onInitial: function(data) {
+            // Only used when follow=true (log tailing mode)
+            if (!state.previewFollow) return;  // Already loaded via /api/file
+
             // Store data for view toggle (adapt SSE data to match API response format)
             state.previewFileData = {
                 content: data.content,
@@ -293,6 +328,12 @@ export async function openPreviewPane(filePath) {
                 const data = await response.json();
 
                 state.previewFileData = data;
+
+                // Show view toggle if this is a markdown file
+                if (dom.previewViewToggle) {
+                    dom.previewViewToggle.style.display = data.rendered_html ? '' : 'none';
+                }
+
                 renderPreviewContent(data, dom.previewViewCheckbox ? dom.previewViewCheckbox.checked : true);
 
                 if (data.truncated) {
