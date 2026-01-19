@@ -48,6 +48,7 @@ _fork_enabled = False  # Enable with --fork CLI flag
 _default_send_backend: str | None = None  # Enable with --default-send-backend CLI flag
 _include_subagents = False  # Enable with --include-subagents CLI flag
 _enable_thinking = False  # Enable with --enable-thinking CLI flag
+_thinking_budget: int | None = None  # Fixed budget with --thinking-budget CLI flag
 
 # Global state for server (not session-related)
 _clients: set[asyncio.Queue] = set()
@@ -116,6 +117,12 @@ def set_enable_thinking(enabled: bool) -> None:
     """Set whether to enable thinking level detection."""
     global _enable_thinking
     _enable_thinking = enabled
+
+
+def set_thinking_budget(budget: int | None) -> None:
+    """Set a fixed thinking token budget (overrides keyword detection)."""
+    global _thinking_budget
+    _thinking_budget = budget
 
 
 def is_send_enabled() -> bool:
@@ -606,8 +613,17 @@ async def run_cli_for_session(
             else None
         )
 
-        # Get thinking token budget based on message keywords (if enabled)
-        if _enable_thinking:
+        # Get thinking token budget: fixed budget > keyword detection > disabled
+        if _thinking_budget is not None:
+            # Fixed budget takes precedence
+            thinking_env = {"MAX_THINKING_TOKENS": str(_thinking_budget)}
+            env = {**os.environ, **thinking_env}
+            logger.info(
+                f"Sending message to {session_id} with fixed thinking budget "
+                f"({_thinking_budget} tokens)"
+            )
+        elif _enable_thinking:
+            # Keyword-based detection
             thinking_level = detect_thinking_level(message)
             thinking_env = {"MAX_THINKING_TOKENS": str(thinking_level.budget_tokens)}
             env = {**os.environ, **thinking_env}

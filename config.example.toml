@@ -31,6 +31,7 @@
 # fork = false                   # Enable session forking
 # default_send_backend = "claude-code"  # Default backend for new sessions
 # enable_thinking = false        # Enable thinking level detection (off by default)
+# thinking_budget = 10000        # Fixed thinking token budget (overrides keyword detection)
 
 [html]
 # output = "/path/to/output"     # Default output directory

@@ -38,6 +38,7 @@ class ServeConfig:
     fork: bool = False
     default_send_backend: str | None = None
     enable_thinking: bool = False
+    thinking_budget: int | None = None  # Fixed thinking token budget (overrides keyword detection)
     # Summary options
     summary_log: str | None = None  # Path to JSONL log file
     summarize_after_idle_for: int | None = None  # Seconds of idle before re-summarizing
@@ -133,6 +134,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "fork": False,
         "default_send_backend": None,
         "enable_thinking": False,
+        "thinking_budget": None,
         "summary_log": None,
         "summarize_after_idle_for": None,
         "idle_summary_model": "haiku",

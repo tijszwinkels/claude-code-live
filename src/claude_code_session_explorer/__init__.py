@@ -112,6 +112,13 @@ def main() -> None:
     help="Enable thinking level detection (set MAX_THINKING_TOKENS based on keywords)",
 )
 @click.option(
+    "--thinking-budget",
+    type=int,
+    default=None,
+    hidden=True,
+    help="Fixed thinking token budget (overrides keyword detection)",
+)
+@click.option(
     "--summary-log",
     type=click.Path(path_type=Path),
     default=None,
@@ -164,6 +171,7 @@ def serve(
     default_send_backend: str | None,
     include_subagents: bool,
     enable_thinking: bool,
+    thinking_budget: int | None,
     summary_log: Path | None,
     summarize_after_idle_for: int | None,
     idle_summary_model: str,
@@ -238,6 +246,7 @@ def serve(
     server.set_fork_enabled(fork)
     server.set_include_subagents(include_subagents)
     server.set_enable_thinking(enable_thinking)
+    server.set_thinking_budget(thinking_budget)
     if default_send_backend:
         server.set_default_send_backend(default_send_backend)
 
