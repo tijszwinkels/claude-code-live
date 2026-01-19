@@ -809,6 +809,269 @@ class TestFileWatchAPI:
         # Clean up generator
         await generator.aclose()
 
+    @pytest.mark.asyncio
+    async def test_file_watch_append_detection(self, home_tmp_path):
+        """Test append detection - file grows, only new bytes sent."""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        test_file = home_tmp_path / "append_test.txt"
+        test_file.write_text("initial")
+
+        mock_request = MagicMock()
+        disconnect_after = 2
+        call_count = 0
+
+        async def mock_is_disconnected():
+            nonlocal call_count
+            call_count += 1
+            return call_count > disconnect_after
+
+        mock_request.is_disconnected = mock_is_disconnected
+
+        # Mock watchfiles.awatch to control when "changes" are detected
+        async def mock_awatch(*args, **kwargs):
+            # First, append to the file
+            with open(test_file, "a") as f:
+                f.write(" appended")
+            # Yield a fake change event (content doesn't matter, generator re-stats the file)
+            yield {("modified", str(test_file))}
+
+        with patch("claude_code_session_explorer.server.watchfiles.awatch", mock_awatch):
+            generator = _file_watch_generator(test_file, mock_request, follow=True)
+
+            # Get initial event
+            event = await generator.__anext__()
+            assert event["event"] == "initial"
+            initial_data = json.loads(event["data"])
+            assert initial_data["content"] == "initial"
+            initial_size = initial_data["size"]
+
+            # Get append event
+            event = await generator.__anext__()
+            assert event["event"] == "append"
+            data = json.loads(event["data"])
+            assert data["content"] == " appended"
+            assert data["offset"] == initial_size
+
+            await generator.aclose()
+
+    @pytest.mark.asyncio
+    async def test_file_watch_truncation_detection(self, home_tmp_path):
+        """Test truncation detection - file shrinks, full content sent."""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        test_file = home_tmp_path / "truncate_test.txt"
+        test_file.write_text("long initial content here")
+
+        mock_request = MagicMock()
+        call_count = 0
+
+        async def mock_is_disconnected():
+            nonlocal call_count
+            call_count += 1
+            return call_count > 2
+
+        mock_request.is_disconnected = mock_is_disconnected
+
+        # Mock watchfiles.awatch to control when "changes" are detected
+        async def mock_awatch(*args, **kwargs):
+            # Truncate file (write shorter content)
+            test_file.write_text("short")
+            yield {("modified", str(test_file))}
+
+        with patch("claude_code_session_explorer.server.watchfiles.awatch", mock_awatch):
+            generator = _file_watch_generator(test_file, mock_request, follow=True)
+
+            # Get initial event
+            event = await generator.__anext__()
+            assert event["event"] == "initial"
+
+            # Get replace event (truncation triggers replace, not append)
+            event = await generator.__anext__()
+            assert event["event"] == "replace"
+            data = json.loads(event["data"])
+            assert data["content"] == "short"
+            assert data["size"] == 5
+
+            await generator.aclose()
+
+    @pytest.mark.asyncio
+    async def test_file_watch_inode_change(self, home_tmp_path):
+        """Test inode change detection - file replaced, full content sent."""
+        import json
+        import os
+        from unittest.mock import MagicMock, patch
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        test_file = home_tmp_path / "inode_test.txt"
+        test_file.write_text("original content")
+
+        mock_request = MagicMock()
+        call_count = 0
+
+        async def mock_is_disconnected():
+            nonlocal call_count
+            call_count += 1
+            return call_count > 2
+
+        mock_request.is_disconnected = mock_is_disconnected
+
+        # Mock watchfiles.awatch to control when "changes" are detected
+        async def mock_awatch(*args, **kwargs):
+            # Replace file (creates new inode on most filesystems)
+            temp_file = home_tmp_path / "inode_test.txt.tmp"
+            temp_file.write_text("replaced content")
+            os.replace(temp_file, test_file)
+            yield {("modified", str(test_file))}
+
+        with patch("claude_code_session_explorer.server.watchfiles.awatch", mock_awatch):
+            generator = _file_watch_generator(test_file, mock_request, follow=True)
+
+            # Get initial event
+            event = await generator.__anext__()
+            assert event["event"] == "initial"
+            initial_data = json.loads(event["data"])
+            initial_inode = initial_data["inode"]
+
+            # Get replace event (inode change triggers replace)
+            event = await generator.__anext__()
+            assert event["event"] == "replace"
+            data = json.loads(event["data"])
+            assert data["content"] == "replaced content"
+            # Verify inode changed
+            assert data["inode"] != initial_inode
+
+            await generator.aclose()
+
+    @pytest.mark.asyncio
+    async def test_file_watch_file_deleted(self, home_tmp_path):
+        """Test file deletion - error event sent."""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        test_file = home_tmp_path / "delete_test.txt"
+        test_file.write_text("will be deleted")
+
+        mock_request = MagicMock()
+        call_count = 0
+
+        async def mock_is_disconnected():
+            nonlocal call_count
+            call_count += 1
+            return call_count > 2
+
+        mock_request.is_disconnected = mock_is_disconnected
+
+        # Mock watchfiles.awatch to control when "changes" are detected
+        async def mock_awatch(*args, **kwargs):
+            # Delete file before yielding change event
+            test_file.unlink()
+            yield {("deleted", str(test_file))}
+
+        with patch("claude_code_session_explorer.server.watchfiles.awatch", mock_awatch):
+            generator = _file_watch_generator(test_file, mock_request, follow=True)
+
+            # Get initial event
+            event = await generator.__anext__()
+            assert event["event"] == "initial"
+
+            # Get error event (file deleted triggers error)
+            event = await generator.__anext__()
+            assert event["event"] == "error"
+            data = json.loads(event["data"])
+            # Error message can be "deleted" or "not found" depending on how file system reports it
+            assert "deleted" in data["message"].lower() or "not found" in data["message"].lower()
+
+            await generator.aclose()
+
+    @pytest.mark.asyncio
+    async def test_file_watch_client_disconnect(self, home_tmp_path):
+        """Test that generator exits cleanly on client disconnect."""
+        import json
+        from unittest.mock import MagicMock
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        test_file = home_tmp_path / "disconnect_test.txt"
+        test_file.write_text("test content")
+
+        mock_request = MagicMock()
+
+        # Simulate immediate disconnect after initial content
+        async def mock_is_disconnected():
+            return True
+
+        mock_request.is_disconnected = mock_is_disconnected
+
+        generator = _file_watch_generator(test_file, mock_request, follow=True)
+
+        # Get initial event
+        event = await generator.__anext__()
+        assert event["event"] == "initial"
+        data = json.loads(event["data"])
+        assert data["content"] == "test content"
+
+        # Generator should stop after disconnect check
+        # The watchfiles loop should exit due to disconnect
+        await generator.aclose()
+        # If we get here without hanging, the test passes
+
+    @pytest.mark.asyncio
+    async def test_file_watch_follow_false_sends_changed_event(self, home_tmp_path):
+        """Test that follow=false sends 'changed' event instead of content."""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        from claude_code_session_explorer.server import _file_watch_generator
+
+        test_file = home_tmp_path / "follow_false_test.txt"
+        test_file.write_text("initial")
+
+        mock_request = MagicMock()
+        call_count = 0
+
+        async def mock_is_disconnected():
+            nonlocal call_count
+            call_count += 1
+            return call_count > 2
+
+        mock_request.is_disconnected = mock_is_disconnected
+
+        # Mock watchfiles.awatch to control when "changes" are detected
+        async def mock_awatch(*args, **kwargs):
+            # Append to file
+            with open(test_file, "a") as f:
+                f.write(" more")
+            yield {("modified", str(test_file))}
+
+        with patch("claude_code_session_explorer.server.watchfiles.awatch", mock_awatch):
+            # Note: follow=False
+            generator = _file_watch_generator(test_file, mock_request, follow=False)
+
+            # Get initial event (still sends full content on connect)
+            event = await generator.__anext__()
+            assert event["event"] == "initial"
+
+            # Should get 'changed' event, not 'append' (because follow=False)
+            event = await generator.__anext__()
+            assert event["event"] == "changed"
+            data = json.loads(event["data"])
+            # Changed event should have size and inode but not content
+            assert "size" in data
+            assert "inode" in data
+            assert "content" not in data
+
+            await generator.aclose()
+
 
 class TestSessionTreeAPI:
     """Tests for the session file tree API endpoint."""
