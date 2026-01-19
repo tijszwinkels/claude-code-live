@@ -183,6 +183,7 @@ export function createSession(sessionId, name, projectName, firstMessage, starte
     sidebarItem.innerHTML = `
         <span class="unread-dot"></span>
         <span class="session-title">${escapeHtml(displayTitle)}</span>
+        <span class="session-project">${escapeHtml(projectName || 'Unknown')}</span>
         <span class="close-btn" title="Close">&times;</span>
     `;
 
@@ -290,7 +291,137 @@ export function removeSession(sessionId) {
     }
 }
 
+// Create top-level date sections for session mode
+function createDateSections() {
+    if (state.dateSections) return state.dateSections;
+
+    state.dateSections = new Map();
+
+    dateCategoryOrder.forEach(function(category) {
+        const section = document.createElement('div');
+        section.className = 'date-section' + (category === 'today' ? '' : ' collapsed');
+        section.dataset.category = category;
+        section.innerHTML = `
+            <div class="date-divider">
+                <span class="date-label">${dateCategoryLabels[category]}</span>
+            </div>
+            <div class="date-session-list"></div>
+        `;
+
+        // Toggle handler
+        section.querySelector('.date-divider').addEventListener('click', function(e) {
+            e.stopPropagation();
+            section.classList.toggle('collapsed');
+        });
+
+        // Tooltip handler
+        section.querySelector('.date-divider').addEventListener('mouseenter', function(e) {
+            showDateCategoryTooltip(null, category, e);
+        });
+        section.querySelector('.date-divider').addEventListener('mouseleave', hideTooltip);
+        section.querySelector('.date-divider').addEventListener('mousemove', positionTooltip);
+
+        state.dateSections.set(category, {
+            element: section,
+            listElement: section.querySelector('.date-session-list')
+        });
+    });
+
+    return state.dateSections;
+}
+
 export function reorderSidebar() {
+    if (state.groupBy === 'session') {
+        reorderSidebarSessionMode();
+    } else {
+        reorderSidebarProjectMode();
+    }
+}
+
+function reorderSidebarSessionMode() {
+    const dateSections = createDateSections();
+
+    // Ensure session-mode class and date sections are in DOM
+    dom.projectListContainer.classList.add('session-mode');
+    dateSections.forEach(function(section) {
+        if (!section.element.parentElement) {
+            dom.projectListContainer.appendChild(section.element);
+        }
+        section.element.style.display = '';
+    });
+
+    // Hide project items
+    state.projects.forEach(function(project) {
+        project.element.style.display = 'none';
+    });
+
+    // FLIP animation: capture positions before reorder
+    const sessionPositions = new Map();
+    state.sessions.forEach(function(session) {
+        sessionPositions.set(session.id, session.sidebarItem.getBoundingClientRect());
+    });
+
+    // Group sessions by date category
+    const sessionsByCategory = {};
+    dateCategoryOrder.forEach(function(cat) { sessionsByCategory[cat] = []; });
+
+    state.sessions.forEach(function(session) {
+        const category = getDateCategory(getSessionCategoryTimestamp(session, state.sortBy));
+        sessionsByCategory[category].push(session);
+        session.sidebarItem.classList.add('session-mode');
+    });
+
+    // Sort and place sessions within each date category
+    dateCategoryOrder.forEach(function(category) {
+        const dateSection = dateSections.get(category);
+        const categorySessions = sessionsByCategory[category]
+            .sort((a, b) => getSessionSortTimestamp(b, state.sortBy) - getSessionSortTimestamp(a, state.sortBy));
+
+        if (categorySessions.length === 0) {
+            dateSection.element.classList.add('empty');
+        } else {
+            dateSection.element.classList.remove('empty');
+            categorySessions.forEach(function(session) {
+                dateSection.listElement.appendChild(session.sidebarItem);
+            });
+        }
+    });
+
+    // FLIP animation: animate from old to new positions
+    state.sessions.forEach(function(session) {
+        const oldRect = sessionPositions.get(session.id);
+        const newRect = session.sidebarItem.getBoundingClientRect();
+        if (oldRect && Math.abs(oldRect.top - newRect.top) > 1) {
+            const deltaY = oldRect.top - newRect.top;
+            session.sidebarItem.style.transform = `translateY(${deltaY}px)`;
+            session.sidebarItem.style.transition = 'none';
+            requestAnimationFrame(function() {
+                session.sidebarItem.style.transition = 'transform 0.2s ease-out';
+                session.sidebarItem.style.transform = '';
+            });
+        }
+    });
+}
+
+function reorderSidebarProjectMode() {
+    // Remove session-mode classes
+    dom.projectListContainer.classList.remove('session-mode');
+    state.sessions.forEach(function(session) {
+        session.sidebarItem.classList.remove('session-mode');
+    });
+
+    // Hide top-level date sections
+    if (state.dateSections) {
+        state.dateSections.forEach(function(section) {
+            section.element.style.display = 'none';
+        });
+    }
+
+    // Show project items
+    state.projects.forEach(function(project) {
+        project.element.style.display = '';
+    });
+
     // FLIP animation: capture positions before reorder
     const projectPositions = new Map();
     const sessionPositions = new Map();
@@ -696,11 +827,21 @@ function removePlaceholderIfMatches(sessionId, messageElement) {
     return false;
 }
 
-// Initialize sort select handler
-export function initSortSelect(onReorder) {
-    dom.sortSelect.value = state.sortBy;
-    dom.sortSelect.addEventListener('change', function() {
-        state.sortBy = dom.sortSelect.value;
+// Initialize group by select handler
+export function initGroupBySelect(onReorder) {
+    dom.groupBySelect.value = state.groupBy;
+    dom.groupBySelect.addEventListener('change', function() {
+        state.groupBy = dom.groupBySelect.value;
+        localStorage.setItem('groupBy', state.groupBy);
+        onReorder();
+    });
+}
+
+// Initialize order by select handler
+export function initOrderBySelect(onReorder) {
+    dom.orderBySelect.value = state.sortBy;
+    dom.orderBySelect.addEventListener('change', function() {
+        state.sortBy = dom.orderBySelect.value;
         localStorage.setItem('sortBy', state.sortBy);
         onReorder();
     });

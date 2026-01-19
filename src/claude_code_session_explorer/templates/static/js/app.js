@@ -8,7 +8,7 @@ import {
 } from './ui.js';
 import { initPreviewPane } from './preview.js';
 import { initFileTree } from './filetree.js';
-import { initSortSelect, initCopyButtons, reorderSidebar } from './sessions.js';
+import { initGroupBySelect, initOrderBySelect, initCopyButtons, reorderSidebar } from './sessions.js';
 import { initMessaging } from './messaging.js';
 import { initModal } from './modal.js';
 import { connect, initVisibilityHandler } from './connection.js';
@@ -34,7 +34,8 @@ function init() {
     initFileTree();
 
     // Initialize session management
-    initSortSelect(reorderSidebar);
+    initGroupBySelect(reorderSidebar);
+    initOrderBySelect(reorderSidebar);
     initCopyButtons();
     initSidebarContextMenu();
 

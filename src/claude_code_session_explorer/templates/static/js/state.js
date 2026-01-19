@@ -27,7 +27,8 @@ export const dom = {
     autoSwitchCheckbox: null,
     autoSwitchLabel: null,
     statusColorsCheckbox: null,
-    sortSelect: null,
+    groupBySelect: null,
+    orderBySelect: null,
     searchInput: null,
     inputBar: null,
     mainContent: null,
@@ -91,7 +92,8 @@ export function initDom() {
     dom.autoSwitchCheckbox = document.getElementById('auto-switch');
     dom.autoSwitchLabel = document.getElementById('auto-switch-label');
     dom.statusColorsCheckbox = document.getElementById('status-colors');
-    dom.sortSelect = document.getElementById('sort-select');
+    dom.groupBySelect = document.getElementById('group-by-select');
+    dom.orderBySelect = document.getElementById('order-by-select');
     dom.searchInput = document.getElementById('sidebar-search');
     dom.inputBar = document.getElementById('input-bar');
     dom.mainContent = document.getElementById('main-content');
@@ -172,7 +174,11 @@ export const state = {
     // Settings (with localStorage persistence)
     autoSwitch: localStorage.getItem('autoSwitch') !== 'false',
     autoScroll: localStorage.getItem('autoScroll') !== 'false',
-    sortBy: localStorage.getItem('sortBy') || 'modified',
+    groupBy: localStorage.getItem('groupBy') || 'session',  // 'project' | 'session'
+    sortBy: localStorage.getItem('sortBy') || 'created',    // 'created' | 'modified'
+
+    // Session mode date sections (created lazily)
+    dateSections: null,
 
     // Status colors feature (hidden behind ?title-colors URL param)
     titleColorsEnabled: new URLSearchParams(window.location.search).has('title-colors'),

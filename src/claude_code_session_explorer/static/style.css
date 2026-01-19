@@ -159,6 +159,12 @@ pre code { background: none; padding: 0; }
 .new-session-btn { padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-muted); font-size: 0.9rem; cursor: pointer; transition: all 0.15s; }
 .new-session-btn:hover { border-color: var(--user-border); color: var(--user-border); background: rgba(25, 118, 210, 0.05); }
 
+/* Sort row (Group by / Order by dropdowns) */
+.sidebar-sort-row { display: flex; gap: 12px; padding-top: 8px; border-top: 1px solid var(--border-color); margin-top: 8px; }
+.sort-label { display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: var(--text-muted); flex: 1; }
+.sort-label span { white-space: nowrap; }
+.sort-label .sort-select { flex: 1; min-width: 0; }
+
 /* Project list */
 .project-list { flex: 1; overflow-y: auto; padding: 4px 0; }
 .project-item { margin-bottom: 0; }
@@ -201,6 +207,21 @@ pre code { background: none; padding: 0; }
 .session-item .close-btn { opacity: 0; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; margin-left: 4px; }
 .session-item:hover .close-btn { opacity: 0.5; }
 .session-item .close-btn:hover { opacity: 1; background: rgba(0,0,0,0.1); }
+
+/* Session item in session-mode: block with two lines */
+.session-item .session-project { display: none; font-size: 0.75rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+.session-item.session-mode { flex-direction: column; align-items: flex-start; padding: 8px 12px 8px 20px; gap: 2px; position: relative; }
+.session-item.session-mode .session-title { font-weight: 500; }
+.session-item.session-mode .session-project { display: block; }
+.session-item.session-mode .unread-dot { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); margin-right: 0; }
+.session-item.session-mode .close-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); margin-left: 0; }
+
+/* Top-level date sections in session mode */
+.project-list.session-mode > .date-section { margin-bottom: 4px; }
+.project-list.session-mode > .date-section > .date-divider { padding: 8px 12px 4px 12px; }
+.project-list.session-mode > .date-section > .date-divider::before { content: ''; }
+.project-list.session-mode > .date-section > .date-divider .date-label { font-size: 0.8rem; font-weight: 600; }
+.project-list.session-mode > .date-section > .date-session-list { padding-left: 0; }
 
 /* Session status colors - based on title suffix (only when enabled) */
 .status-colors-enabled .session-item.status-done { background: rgba(76, 175, 80, 0.12); }

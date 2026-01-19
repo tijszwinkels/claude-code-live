@@ -35,11 +35,23 @@
                     <input type="checkbox" id="status-colors" checked>
                     <span>Colors</span>
                 </label>
-                <select class="sort-select" id="sort-select" title="Sort sessions by">
-                    <option value="modified">Modified</option>
-                    <option value="created">Created</option>
-                </select>
                 <button class="new-session-btn" id="new-session-btn" title="New session in custom directory">+ New</button>
+            </div>
+            <div class="sidebar-sort-row">
+                <label class="sort-label">
+                    <span>Group:</span>
+                    <select class="sort-select" id="group-by-select">
+                        <option value="session">Session</option>
+                        <option value="project">Project</option>
+                    </select>
+                </label>
+                <label class="sort-label">
+                    <span>Order:</span>
+                    <select class="sort-select" id="order-by-select">
+                        <option value="created">Created</option>
+                        <option value="modified">Modified</option>
+                    </select>
+                </label>
             </div>
         </div>
         <div class="project-list" id="project-list"></div>
