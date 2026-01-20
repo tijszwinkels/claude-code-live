@@ -55,6 +55,75 @@ def get_parent_session_id(path: Path) -> str | None:
     return None
 
 
+def _decode_path_greedy(encoded: str) -> str | None:
+    """Decode an encoded path by greedily building segments.
+
+    Uses filesystem lookups to determine which dashes are path separators
+    vs. literal characters in directory names.
+
+    Args:
+        encoded: The encoded folder name (e.g., "home-claude-projects-my-project")
+
+    Returns:
+        The decoded path if found, None otherwise.
+    """
+    # Start with root
+    current_path = Path("/")
+    remaining = encoded
+
+    while remaining:
+        # Find all dash positions in remaining string
+        dash_positions = [i for i, c in enumerate(remaining) if c == "-"]
+
+        if not dash_positions:
+            # No more dashes - remaining is the final segment
+            candidate = current_path / remaining
+            if candidate.is_dir():
+                return str(candidate)
+            # Also try underscore variant
+            candidate = current_path / remaining.replace("-", "_")
+            if candidate.is_dir():
+                return str(candidate)
+            return None
+
+        # Try progressively longer segments (greedy: prefer shorter valid paths first)
+        found_segment = False
+        for dash_pos in dash_positions:
+            segment = remaining[:dash_pos]
+            if not segment:
+                continue
+
+            candidate = current_path / segment
+            if candidate.is_dir():
+                current_path = candidate
+                remaining = remaining[dash_pos + 1 :]  # Skip the dash
+                found_segment = True
+                break
+
+            # Also try underscore variant for the segment
+            segment_with_underscore = segment.replace("-", "_")
+            candidate = current_path / segment_with_underscore
+            if candidate.is_dir():
+                current_path = candidate
+                remaining = remaining[dash_pos + 1 :]
+                found_segment = True
+                break
+
+        if not found_segment:
+            # No valid segment found at any dash position
+            # Try the entire remaining string as the final segment
+            candidate = current_path / remaining
+            if candidate.is_dir():
+                return str(candidate)
+            # Try with underscores
+            candidate = current_path / remaining.replace("-", "_")
+            if candidate.is_dir():
+                return str(candidate)
+            return None
+
+    return str(current_path) if current_path != Path("/") else None
+
+
 def get_session_name(session_path: Path) -> tuple[str, str]:
     """Extract project name and path from a session path.
 
@@ -65,7 +134,7 @@ def get_session_name(session_path: Path) -> tuple[str, str]:
     ~/.claude/projects/-Users-tijs-projects-claude-code-live/SESSION-UUID/subagents/agent-xxx.jsonl
 
     The folder name encodes the original path with slashes replaced by dashes.
-    Additionally, underscores in directory names are also replaced with dashes.
+    Additionally, special characters are encoded: . -> -, ~ -> -, _ -> -.
     We check if decoded paths actually exist on the filesystem to find the
     correct project directory.
 
@@ -90,19 +159,29 @@ def get_session_name(session_path: Path) -> tuple[str, str]:
     # Remove leading dash
     folder = folder.lstrip("-")
 
-    # Try to find the actual directory by testing different dash positions
-    # Some dashes are path separators, some are part of directory names,
-    # and some were originally underscores.
-    # Additionally, -- could represent /. (dotfiles) since both / and . become -
-    # Strategy: try replacing each dash with / and see if the resulting path exists
-    # Also try replacing remaining dashes with underscores
-
-    # Try two variants: original folder, and folder with -- converted to -.
-    # The -- -> -. handles dotfiles (e.g., /.mycel encoded as --mycel)
+    # Generate variants to handle special character encoding:
+    # - -- could be /. (dotfile: /.mycel -> --mycel)
+    # - --- could be /~/ (tilde dir: /~/ -> ---)
+    # - ---- could be /~/. (tilde + dotfile: /~/.mycel -> ----mycel)
+    # We restore special chars but keep dashes that will later be tested as path separators.
     folder_variants = [folder]
+    if "----" in folder:
+        # /~/. pattern (tilde directory + dotfile) - restore ~/.
+        folder_variants.append(folder.replace("----", "-~-."))
+    if "---" in folder:
+        # /~/ pattern (tilde directory) - restore ~/
+        folder_variants.append(folder.replace("---", "-~-"))
     if "--" in folder:
+        # /. pattern (dotfile) - restore the dot
         folder_variants.append(folder.replace("--", "-."))
 
+    # Try greedy path decoding first (handles complex paths with dashes in names)
+    for folder_variant in folder_variants:
+        decoded = _decode_path_greedy(folder_variant)
+        if decoded:
+            return Path(decoded).name, decoded
+
+    # Fallback to contiguous dash replacement (original algorithm)
     for folder_variant in folder_variants:
         # Find all dash positions
         dash_positions = [i for i, c in enumerate(folder_variant) if c == "-"]

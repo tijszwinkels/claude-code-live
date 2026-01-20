@@ -290,6 +290,53 @@ class TestGetSessionName:
             assert path == str(double_dash_dir)
             assert name == "foo--bar"
 
+    def test_decodes_tilde_dotfile_path(self):
+        """Should correctly decode paths with ~/. (tilde + dotfile)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a structure like: /tmp/xxx/project/~/.mycel/agents/tool
+            # This simulates someone with a literal ~ directory inside a project
+            tilde_dotfile_dir = Path(tmpdir) / "project" / "~" / ".mycel" / "agents" / "tool"
+            tilde_dotfile_dir.mkdir(parents=True)
+
+            # The encoding: /tmp/xxx/project/~/.mycel/agents/tool
+            # becomes: -tmp-xxx-project----mycel-agents-tool
+            # (/ -> -, ~ -> -, / -> -, . -> - = four dashes before mycel)
+            encoded_name = (
+                tmpdir.replace("/", "-").lstrip("-") + "-project----mycel-agents-tool"
+            )
+            projects_dir = Path(tmpdir) / "projects"
+            project_dir = projects_dir / f"-{encoded_name}"
+            project_dir.mkdir(parents=True)
+
+            session_path = project_dir / "abc123.jsonl"
+            session_path.touch()
+
+            name, path = get_session_name(session_path)
+
+            assert path == str(tilde_dotfile_dir)
+            assert name == "tool"
+
+    def test_decodes_path_with_dashes_in_dirname(self):
+        """Should correctly decode paths where directory names contain dashes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/my-cool-project/src
+            dir_with_dashes = Path(tmpdir) / "my-cool-project" / "src"
+            dir_with_dashes.mkdir(parents=True)
+
+            # Encoding: /tmp/xxx/my-cool-project/src -> -tmp-xxx-my-cool-project-src
+            encoded_name = tmpdir.replace("/", "-").lstrip("-") + "-my-cool-project-src"
+            projects_dir = Path(tmpdir) / "projects"
+            project_dir = projects_dir / f"-{encoded_name}"
+            project_dir.mkdir(parents=True)
+
+            session_path = project_dir / "abc123.jsonl"
+            session_path.touch()
+
+            name, path = get_session_name(session_path)
+
+            assert path == str(dir_with_dashes)
+            assert name == "src"
+
 
 class TestIsSummaryFile:
     """Tests for is_summary_file function."""
