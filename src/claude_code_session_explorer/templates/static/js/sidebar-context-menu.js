@@ -3,6 +3,7 @@
 import { state } from './state.js';
 import { copyToClipboard } from './utils.js';
 import { loadFileTree, openRightPane } from './filetree.js';
+import { archiveSession, unarchiveSession } from './sessions.js';
 
 let sidebarContextMenu = null;
 let currentMenuType = null; // 'project' or 'session'
@@ -66,7 +67,14 @@ export function showSessionContextMenu(e, sessionId) {
     currentMenuData = { sessionId, session };
 
     // Build menu items for session
+    const isArchived = state.archivedSessionIds.has(sessionId);
     let menuItems = `<button class="context-menu-item" data-action="trigger-summary">Trigger summary</button>`;
+
+    if (isArchived) {
+        menuItems += `<button class="context-menu-item" data-action="unarchive">Unarchive session</button>`;
+    } else {
+        menuItems += `<button class="context-menu-item" data-action="archive">Archive session</button>`;
+    }
 
     sidebarContextMenu.innerHTML = menuItems;
     positionAndShowMenu(e);
@@ -125,6 +133,12 @@ async function handleSessionAction(action) {
 
     if (action === 'trigger-summary') {
         await triggerSummary(currentMenuData.sessionId);
+    } else if (action === 'archive') {
+        archiveSession(currentMenuData.sessionId);
+        showFlashMessage('Session archived', 'success');
+    } else if (action === 'unarchive') {
+        unarchiveSession(currentMenuData.sessionId);
+        showFlashMessage('Session unarchived', 'success');
     }
 }
 
