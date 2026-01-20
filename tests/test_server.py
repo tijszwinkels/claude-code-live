@@ -1614,6 +1614,110 @@ class TestFileUploadEndpoint:
         assert existing.read_text() == "new content"
 
 
+class TestArchivedSessionsEndpoints:
+    """Tests for archived sessions endpoints."""
+
+    @pytest.fixture(autouse=True)
+    def reset_archived_sessions(self, home_tmp_path):
+        """Reset archived sessions config before each test."""
+        config_path = server._get_archived_sessions_path()
+        # Clean up any existing config
+        if config_path.exists():
+            config_path.unlink()
+        yield
+        # Clean up after test
+        if config_path.exists():
+            config_path.unlink()
+
+    def test_get_archived_sessions_empty(self):
+        """Test getting archived sessions when none exist."""
+        client = TestClient(app)
+        response = client.get("/api/archived-sessions")
+        assert response.status_code == 200
+        assert response.json() == {"archived": []}
+
+    def test_archive_session(self):
+        """Test archiving a session."""
+        client = TestClient(app)
+        response = client.post(
+            "/api/archived-sessions/archive",
+            json={"session_id": "test-session-123"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "archived"
+        assert data["session_id"] == "test-session-123"
+
+        # Verify it's in the list
+        response = client.get("/api/archived-sessions")
+        assert "test-session-123" in response.json()["archived"]
+
+    def test_archive_session_already_archived(self):
+        """Test archiving an already archived session."""
+        client = TestClient(app)
+        # Archive once
+        client.post(
+            "/api/archived-sessions/archive",
+            json={"session_id": "test-session-123"}
+        )
+        # Archive again
+        response = client.post(
+            "/api/archived-sessions/archive",
+            json={"session_id": "test-session-123"}
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "already_archived"
+
+    def test_unarchive_session(self):
+        """Test unarchiving a session."""
+        client = TestClient(app)
+        # First archive
+        client.post(
+            "/api/archived-sessions/archive",
+            json={"session_id": "test-session-456"}
+        )
+        # Then unarchive
+        response = client.post(
+            "/api/archived-sessions/unarchive",
+            json={"session_id": "test-session-456"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "unarchived"
+        assert data["session_id"] == "test-session-456"
+
+        # Verify it's no longer in the list
+        response = client.get("/api/archived-sessions")
+        assert "test-session-456" not in response.json()["archived"]
+
+    def test_unarchive_session_not_archived(self):
+        """Test unarchiving a session that isn't archived."""
+        client = TestClient(app)
+        response = client.post(
+            "/api/archived-sessions/unarchive",
+            json={"session_id": "nonexistent-session"}
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "not_archived"
+
+    def test_archived_sessions_persisted_to_file(self):
+        """Test that archived sessions are persisted to file."""
+        client = TestClient(app)
+        client.post(
+            "/api/archived-sessions/archive",
+            json={"session_id": "persistent-session"}
+        )
+
+        # Check the file exists and contains the session
+        config_path = server._get_archived_sessions_path()
+        assert config_path.exists()
+
+        import json
+        with open(config_path) as f:
+            data = json.load(f)
+        assert "persistent-session" in data["archived"]
+
+
 # Note: SSE endpoint streaming tests are skipped because TestClient
 # doesn't handle SSE event generators well. The endpoint is tested
 # manually and through integration tests.

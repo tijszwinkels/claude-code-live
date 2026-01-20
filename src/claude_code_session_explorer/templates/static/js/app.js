@@ -8,7 +8,7 @@ import {
 } from './ui.js';
 import { initPreviewPane } from './preview.js';
 import { initFileTree } from './filetree.js';
-import { initGroupBySelect, initOrderBySelect, initCopyButtons, reorderSidebar } from './sessions.js';
+import { initGroupBySelect, initOrderBySelect, initCopyButtons, reorderSidebar, loadArchivedSessions } from './sessions.js';
 import { initMessaging } from './messaging.js';
 import { initModal } from './modal.js';
 import { connect, initVisibilityHandler } from './connection.js';
@@ -79,8 +79,11 @@ function init() {
         }
     });
 
-    // Connect to SSE and start receiving events
-    connect();
+    // Load archived sessions from server before connecting
+    loadArchivedSessions().then(() => {
+        // Connect to SSE and start receiving events
+        connect();
+    });
 
     // Initialize visibility change handler for reconnection
     initVisibilityHandler();

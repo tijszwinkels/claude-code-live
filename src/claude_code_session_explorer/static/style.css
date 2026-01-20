@@ -230,6 +230,12 @@ pre code { background: none; padding: 0; }
 .project-list.session-mode > .date-section > .date-divider .date-label { font-size: 0.8rem; font-weight: 600; }
 .project-list.session-mode > .date-section > .date-session-list { padding-left: 0; }
 
+/* Archived sessions */
+.session-item.archived { opacity: 0.5; }
+.session-item.archived:hover { opacity: 0.7; }
+.date-section.archived-section > .date-divider .date-label { color: var(--text-muted); }
+.date-section.archived-section > .date-divider .date-label::before { content: '📦 '; }
+
 /* Session status colors - based on title suffix (only when enabled) */
 .status-colors-enabled .session-item.status-done { background: rgba(76, 175, 80, 0.12); }
 .status-colors-enabled .session-item.status-done:hover { background: rgba(76, 175, 80, 0.20); }

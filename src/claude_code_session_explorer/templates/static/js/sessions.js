@@ -1,6 +1,6 @@
 // Sessions module - session management, sidebar ordering
 
-import { dom, state, MAX_MESSAGES, MAX_TITLE_LENGTH, dateCategoryLabels, dateCategoryOrder } from './state.js';
+import { dom, state, MAX_MESSAGES, MAX_TITLE_LENGTH, dateCategoryLabels, dateCategoryOrder, archivedCategory } from './state.js';
 import {
     escapeHtml, truncateTitle, isMobile, isNearBottom, copyToClipboard,
     getDateCategory, getSessionSortTimestamp, getSessionCategoryTimestamp,
@@ -196,7 +196,7 @@ export function createSession(sessionId, name, projectName, firstMessage, starte
 
     sidebarItem.addEventListener('click', function(e) {
         if (e.target.classList.contains('close-btn')) {
-            removeSession(sessionId);
+            archiveSession(sessionId);
         } else if (e.target.classList.contains('new-in-folder-btn')) {
             // Create new session in same folder (same as project header "+" button)
             const cwd = sidebarItem.dataset.cwd;
@@ -237,6 +237,12 @@ export function createSession(sessionId, name, projectName, firstMessage, starte
         dateSection.listElement.appendChild(sidebarItem);
     }
 
+    // Check if this session is archived
+    const isArchived = state.archivedSessionIds.has(sessionId);
+    if (isArchived) {
+        sidebarItem.classList.add('archived');
+    }
+
     const session = {
         id: sessionId,
         name: name,
@@ -255,21 +261,27 @@ export function createSession(sessionId, name, projectName, firstMessage, starte
         // Summary data (may be null if no summary file exists yet)
         summaryTitle: summaryTitle || null,
         summaryShort: summaryShort || null,
-        summaryExecutive: summaryExecutive || null
+        summaryExecutive: summaryExecutive || null,
+        archived: isArchived
     };
     state.sessions.set(sessionId, session);
 
     // Update project's last activity
     project.lastActivity = Math.max(project.lastActivity, session.lastActivity);
 
-    // If this is the first session, activate it
-    if (state.sessions.size === 1) {
+    // If this is the first session and it's not archived, activate it
+    // Otherwise find first non-archived session
+    if (state.sessions.size === 1 && !isArchived) {
         switchToSession(sessionId);
+    } else if (state.sessions.size === 1 && isArchived) {
+        // First session is archived, don't auto-activate
+        state.activeSessionId = null;
     }
 
     return session;
 }
 
+// Remove session completely from UI (used when server reports session no longer exists)
 export function removeSession(sessionId) {
     const session = state.sessions.get(sessionId);
     if (!session) return;
@@ -285,6 +297,9 @@ export function removeSession(sessionId) {
         }
     }
 
+    // Also remove from archived if it was there
+    state.archivedSessionIds.delete(sessionId);
+
     session.container.remove();
     session.sidebarItem.remove();
     state.sessions.delete(sessionId);
@@ -299,15 +314,122 @@ export function removeSession(sessionId) {
     }
 }
 
+export async function archiveSession(sessionId) {
+    const session = state.sessions.get(sessionId);
+    if (!session) return;
+
+    // Add to archived set
+    state.archivedSessionIds.add(sessionId);
+
+    // Mark session as archived and reorder sidebar
+    session.archived = true;
+    session.sidebarItem.classList.add('archived');
+    reorderSidebar();
+
+    // If this was the active session, switch to another
+    const wasActive = state.activeSessionId === sessionId;
+    if (wasActive) {
+        // Find first non-archived session
+        for (const [id, s] of state.sessions) {
+            if (!state.archivedSessionIds.has(id)) {
+                switchToSession(id);
+                break;
+            }
+        }
+    }
+
+    // Persist to server - rollback on failure
+    try {
+        const response = await fetch('/api/archived-sessions/archive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+    } catch (err) {
+        console.error('Failed to archive session:', err);
+        // Rollback state
+        state.archivedSessionIds.delete(sessionId);
+        session.archived = false;
+        session.sidebarItem.classList.remove('archived');
+        reorderSidebar();
+        if (wasActive) {
+            switchToSession(sessionId);
+        }
+    }
+}
+
+export async function unarchiveSession(sessionId) {
+    const session = state.sessions.get(sessionId);
+    if (!session) return;
+
+    // Remove from archived set
+    state.archivedSessionIds.delete(sessionId);
+
+    // Mark session as not archived and reorder sidebar
+    session.archived = false;
+    session.sidebarItem.classList.remove('archived');
+    reorderSidebar();
+
+    // Persist to server - rollback on failure
+    try {
+        const response = await fetch('/api/archived-sessions/unarchive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+    } catch (err) {
+        console.error('Failed to unarchive session:', err);
+        // Rollback state
+        state.archivedSessionIds.add(sessionId);
+        session.archived = true;
+        session.sidebarItem.classList.add('archived');
+        reorderSidebar();
+    }
+}
+
+// Load archived sessions from server on init
+export async function loadArchivedSessions() {
+    try {
+        const response = await fetch('/api/archived-sessions');
+        const data = await response.json();
+        state.archivedSessionIds = new Set(data.archived || []);
+
+        // Mark already-loaded sessions as archived
+        for (const sessionId of state.archivedSessionIds) {
+            const session = state.sessions.get(sessionId);
+            if (session) {
+                session.archived = true;
+                session.sidebarItem.classList.add('archived');
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load archived sessions:', err);
+    }
+}
+
 // Create top-level date sections for session mode
 function createDateSections() {
     if (state.dateSections) return state.dateSections;
 
     state.dateSections = new Map();
 
-    dateCategoryOrder.forEach(function(category) {
+    // Include archived category at the end
+    const allCategories = [...dateCategoryOrder, archivedCategory];
+
+    allCategories.forEach(function(category) {
         const section = document.createElement('div');
-        section.className = 'date-section' + (category === 'today' ? '' : ' collapsed');
+        // Archived section is always collapsed by default
+        const isCollapsed = category !== 'today';
+        section.className = 'date-section' + (isCollapsed ? ' collapsed' : '');
+        if (category === archivedCategory) {
+            section.className += ' archived-section';
+        }
         section.dataset.category = category;
         section.innerHTML = `
             <div class="date-divider">
@@ -369,18 +491,25 @@ function reorderSidebarSessionMode() {
         sessionPositions.set(session.id, session.sidebarItem.getBoundingClientRect());
     });
 
-    // Group sessions by date category
+    // Group sessions by date category (with archived as separate category)
     const sessionsByCategory = {};
     dateCategoryOrder.forEach(function(cat) { sessionsByCategory[cat] = []; });
+    sessionsByCategory[archivedCategory] = [];
 
     state.sessions.forEach(function(session) {
-        const category = getDateCategory(getSessionCategoryTimestamp(session, state.sortBy));
-        sessionsByCategory[category].push(session);
+        // Archived sessions go to archived category regardless of date
+        if (state.archivedSessionIds.has(session.id)) {
+            sessionsByCategory[archivedCategory].push(session);
+        } else {
+            const category = getDateCategory(getSessionCategoryTimestamp(session, state.sortBy));
+            sessionsByCategory[category].push(session);
+        }
         session.sidebarItem.classList.add('session-mode');
     });
 
-    // Sort and place sessions within each date category
-    dateCategoryOrder.forEach(function(category) {
+    // Sort and place sessions within each date category (including archived)
+    const allCategories = [...dateCategoryOrder, archivedCategory];
+    allCategories.forEach(function(category) {
         const dateSection = dateSections.get(category);
         const categorySessions = sessionsByCategory[category]
             .sort((a, b) => getSessionSortTimestamp(b, state.sortBy) - getSessionSortTimestamp(a, state.sortBy));
@@ -412,18 +541,26 @@ function reorderSidebarSessionMode() {
 }
 
 function reorderSidebarProjectMode() {
+    // Ensure date sections exist (needed for archived section)
+    const dateSections = createDateSections();
+
     // Remove session-mode classes
     dom.projectListContainer.classList.remove('session-mode');
     state.sessions.forEach(function(session) {
         session.sidebarItem.classList.remove('session-mode');
     });
 
-    // Hide top-level date sections
-    if (state.dateSections) {
-        state.dateSections.forEach(function(section) {
+    // Hide top-level date sections (but keep archived visible at the end)
+    dateSections.forEach(function(section, category) {
+        if (category === archivedCategory) {
+            // Archived section will be shown if it has items (handled below)
+            if (!section.element.parentElement) {
+                dom.projectListContainer.appendChild(section.element);
+            }
+        } else {
             section.element.style.display = 'none';
-        });
-    }
+        }
+    });
 
     // Show project items
     state.projects.forEach(function(project) {
@@ -441,15 +578,18 @@ function reorderSidebarProjectMode() {
         sessionPositions.set(session.id, session.sidebarItem.getBoundingClientRect());
     });
 
-    // Sort projects by most recent session (based on sort mode)
+    // Collect archived sessions separately
+    const archivedSessions = [];
+
+    // Sort projects by most recent non-archived session (based on sort mode)
     const sortedProjects = Array.from(state.projects.values()).sort(function(a, b) {
         const aMax = Array.from(a.sessions)
             .map(id => state.sessions.get(id))
-            .filter(s => s)
+            .filter(s => s && !state.archivedSessionIds.has(s.id))
             .reduce((max, s) => Math.max(max, getSessionSortTimestamp(s, state.sortBy)), 0);
         const bMax = Array.from(b.sessions)
             .map(id => state.sessions.get(id))
-            .filter(s => s)
+            .filter(s => s && !state.archivedSessionIds.has(s.id))
             .reduce((max, s) => Math.max(max, getSessionSortTimestamp(s, state.sortBy)), 0);
         return bMax - aMax;
     });
@@ -457,7 +597,7 @@ function reorderSidebarProjectMode() {
     sortedProjects.forEach(function(project) {
         dom.projectListContainer.appendChild(project.element);
 
-        // Group sessions by date category
+        // Group sessions by date category (excluding archived)
         const sessionsByCategory = {};
         dateCategoryOrder.forEach(function(cat) { sessionsByCategory[cat] = []; });
 
@@ -465,8 +605,12 @@ function reorderSidebarProjectMode() {
             .map(id => state.sessions.get(id))
             .filter(s => s)
             .forEach(function(session) {
-                const category = getDateCategory(getSessionCategoryTimestamp(session, state.sortBy));
-                sessionsByCategory[category].push(session);
+                if (state.archivedSessionIds.has(session.id)) {
+                    archivedSessions.push(session);
+                } else {
+                    const category = getDateCategory(getSessionCategoryTimestamp(session, state.sortBy));
+                    sessionsByCategory[category].push(session);
+                }
             });
 
         // Sort and place sessions within each date category
@@ -486,12 +630,31 @@ function reorderSidebarProjectMode() {
             }
         });
 
-        // Collapse project if no sessions in "today"
+        // Collapse project if no non-archived sessions in "today"
         const todaySessions = sessionsByCategory['today'];
         if (todaySessions.length === 0 && !project.element.classList.contains('user-expanded')) {
             project.element.classList.add('collapsed');
         }
     });
+
+    // Place archived sessions in the archived section
+    const archivedSection = dateSections.get(archivedCategory);
+    if (archivedSection) {
+        // Sort archived sessions by timestamp
+        const sortedArchived = archivedSessions
+            .sort((a, b) => getSessionSortTimestamp(b, state.sortBy) - getSessionSortTimestamp(a, state.sortBy));
+
+        if (sortedArchived.length === 0) {
+            archivedSection.element.classList.add('empty');
+            archivedSection.element.style.display = 'none';
+        } else {
+            archivedSection.element.classList.remove('empty');
+            archivedSection.element.style.display = '';
+            sortedArchived.forEach(function(session) {
+                archivedSection.listElement.appendChild(session.sidebarItem);
+            });
+        }
+    }
 
     // FLIP animation: animate from old to new positions
     state.projects.forEach(function(project) {

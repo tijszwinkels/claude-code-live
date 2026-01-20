@@ -8,10 +8,12 @@ export const dateCategoryLabels = {
     today: 'Today',
     yesterday: 'Yesterday',
     lastWeek: 'Past 7 Days',
-    older: 'Older'
+    older: 'Older',
+    archived: 'Archived'
 };
 
 export const dateCategoryOrder = ['today', 'yesterday', 'lastWeek', 'older'];
+export const archivedCategory = 'archived';
 
 // DOM Elements - initialized after DOM is ready
 export const dom = {
@@ -159,6 +161,7 @@ export const state = {
     projects: new Map(),      // project_name -> { name, sessions: Set, lastActivity, element }
     sessionStatus: new Map(), // session_id -> { running, queued_messages, waiting_for_input }
     sessionPreviewPaths: new Map(), // session_id -> file path (track open preview per session)
+    archivedSessionIds: new Set(), // session_ids that are archived (loaded from server)
 
     // UI state
     activeSessionId: null,
