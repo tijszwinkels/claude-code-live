@@ -14,6 +14,7 @@ from claude_code_session_explorer.backends.claude_code.discovery import (
     get_session_name,
     is_summary_file,
     get_session_id_from_summary_file,
+    _decode_path_greedy,
 )
 from claude_code_session_explorer.backends.claude_code.pricing import get_session_model
 from claude_code_session_explorer.backends.claude_code.tailer import is_warmup_session
@@ -336,6 +337,214 @@ class TestGetSessionName:
 
             assert path == str(dir_with_dashes)
             assert name == "src"
+
+
+class TestDecodePathGreedy:
+    """Tests for _decode_path_greedy function."""
+
+    def test_decodes_simple_path(self):
+        """Should decode a simple path with no special characters."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/home/user/projects
+            target = Path(tmpdir) / "home" / "user" / "projects"
+            target.mkdir(parents=True)
+
+            # Encoded: home-user-projects (relative to tmpdir)
+            # We need to test from root, so create full structure
+            result = _decode_path_greedy(str(target).lstrip("/").replace("/", "-"))
+
+            assert result == str(target)
+
+    def test_decodes_path_with_dashes_in_dirname(self):
+        """Should handle directory names containing dashes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/my-cool-project/src
+            target = Path(tmpdir) / "my-cool-project" / "src"
+            target.mkdir(parents=True)
+
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_decodes_path_with_dotfile(self):
+        """Should handle dotfile directories when variant is provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/.mycel/agents
+            target = Path(tmpdir) / ".mycel" / "agents"
+            target.mkdir(parents=True)
+
+            # The variant has already converted -- to -.
+            # So input would be: tmp-xxx-.mycel-agents
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_decodes_tilde_dotfile_path(self):
+        """Should handle ~/. pattern (tilde + dotfile)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/project/~/.mycel/agents
+            target = Path(tmpdir) / "project" / "~" / ".mycel" / "agents"
+            target.mkdir(parents=True)
+
+            # The variant has already converted ---- to -~-.
+            # So input would be: tmp-xxx-project-~-.mycel-agents
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_returns_none_for_nonexistent_path(self):
+        """Should return None when path doesn't exist."""
+        result = _decode_path_greedy("nonexistent-path-that-does-not-exist")
+        assert result is None
+
+    def test_handles_underscore_directories(self):
+        """Should try underscore variants for directory names."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/my_project/src (with underscore)
+            target = Path(tmpdir) / "my_project" / "src"
+            target.mkdir(parents=True)
+
+            # Encoded as dashes: tmp-xxx-my-project-src
+            # The algorithm should try my_project when my-project fails
+            encoded = str(target).lstrip("/").replace("/", "-").replace("_", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_prefers_shorter_segments(self):
+        """Should prefer shorter valid path segments (greedy behavior)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/a/b/c
+            target = Path(tmpdir) / "a" / "b" / "c"
+            target.mkdir(parents=True)
+
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_handles_deep_nesting(self):
+        """Should handle deeply nested paths."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a deeply nested path
+            target = Path(tmpdir) / "a" / "b" / "c" / "d" / "e" / "f"
+            target.mkdir(parents=True)
+
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_handles_single_segment(self):
+        """Should handle path with no dashes (single segment)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/project
+            target = Path(tmpdir) / "project"
+            target.mkdir(parents=True)
+
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_handles_multiple_dashes_in_name(self):
+        """Should handle directory names with multiple consecutive dashes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/foo--bar/src (literal double dash in name)
+            target = Path(tmpdir) / "foo--bar" / "src"
+            target.mkdir(parents=True)
+
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_greedy_chooses_correct_path_when_ambiguous(self):
+        """Should find correct path even when intermediate segments could match multiple ways."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create only: /tmp/xxx/home/user/projects
+            # NOT: /tmp/xxx/home-user/projects
+            # The greedy algorithm should find the correct segmentation
+            target = Path(tmpdir) / "home" / "user" / "projects"
+            target.mkdir(parents=True)
+
+            encoded = str(target).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            assert result == str(target)
+
+    def test_handles_collision_prefers_first_valid(self):
+        """When multiple paths could match, greedy prefers shortest first segment."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create both: /tmp/xxx/a/bc and /tmp/xxx/a-bc
+            # Encoded "a-bc" is ambiguous
+            path1 = Path(tmpdir) / "a" / "bc"
+            path1.mkdir(parents=True)
+            path2 = Path(tmpdir) / "a-bc"
+            path2.mkdir(parents=True)
+
+            # The greedy algorithm will find /a/bc first (shorter first segment)
+            encoded = str(path1).lstrip("/").replace("/", "-")
+            result = _decode_path_greedy(encoded)
+
+            # Greedy finds the one with shorter segments first
+            assert result == str(path1)
+
+
+class TestGetSessionNameEdgeCases:
+    """Edge case tests for get_session_name with special encodings."""
+
+    def test_combined_dotfile_and_dashes(self):
+        """Should handle paths with both dotfiles and dashes in names."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/my-project/.config/settings
+            target = Path(tmpdir) / "my-project" / ".config" / "settings"
+            target.mkdir(parents=True)
+
+            # Encoding: tmp-xxx-my-project--config-settings
+            # The -- represents /.
+            encoded_name = (
+                str(tmpdir).replace("/", "-").lstrip("-")
+                + "-my-project--config-settings"
+            )
+            projects_dir = Path(tmpdir) / "projects"
+            project_dir = projects_dir / f"-{encoded_name}"
+            project_dir.mkdir(parents=True)
+
+            session_path = project_dir / "abc123.jsonl"
+            session_path.touch()
+
+            name, path = get_session_name(session_path)
+
+            assert path == str(target)
+            assert name == "settings"
+
+    def test_multiple_dotfiles_in_path(self):
+        """Should handle paths with multiple dotfile directories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create: /tmp/xxx/.config/.local/data
+            target = Path(tmpdir) / ".config" / ".local" / "data"
+            target.mkdir(parents=True)
+
+            # Encoding: tmp-xxx--config--local-data
+            # Each -- represents /.
+            encoded_name = (
+                str(tmpdir).replace("/", "-").lstrip("-") + "--config--local-data"
+            )
+            projects_dir = Path(tmpdir) / "projects"
+            project_dir = projects_dir / f"-{encoded_name}"
+            project_dir.mkdir(parents=True)
+
+            session_path = project_dir / "abc123.jsonl"
+            session_path.touch()
+
+            name, path = get_session_name(session_path)
+
+            assert path == str(target)
+            assert name == "data"
 
 
 class TestIsSummaryFile:
