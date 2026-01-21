@@ -14,7 +14,7 @@ from ..models import (
     NewSessionRequest,
     SendMessageRequest,
 )
-from ..sessions import get_session, get_sessions, get_sessions_list, get_sessions_lock
+from ..sessions import get_session, get_sessions, get_sessions_list, get_sessions_lock, _get_session_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +322,7 @@ async def grant_permission_new_session(request: GrantPermissionNewSessionRequest
                 if matching_session is None or (
                     info.path.exists()
                     and (not matching_session.path.exists()
-                         or info.path.stat().st_mtime > matching_session.path.stat().st_mtime)
+                         or _get_session_timestamp(info) > _get_session_timestamp(matching_session))
                 ):
                     matching_session = info
 

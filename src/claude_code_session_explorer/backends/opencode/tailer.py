@@ -283,3 +283,32 @@ class OpenCodeTailer:
             return dt.isoformat()
         except (ValueError, TypeError, OSError):
             return ""
+
+    def get_last_message_timestamp(self) -> float | None:
+        """Get the timestamp of the last message in the session.
+
+        Returns:
+            Unix timestamp (seconds since epoch) of the last message,
+            or None if no messages found.
+        """
+        msg_dir = self._get_msg_dir()
+        if not msg_dir.exists():
+            return None
+
+        # Get the last message by ID (messages are sorted by ID)
+        msg_files = sorted(msg_dir.glob("*.json"), reverse=True)
+        if not msg_files:
+            return None
+
+        try:
+            msg_data = json.loads(msg_files[0].read_text())
+            time_data = msg_data.get("time", {})
+            # Use 'updated' if available, fall back to 'created'
+            timestamp_ms = time_data.get("updated") or time_data.get("created")
+            if timestamp_ms:
+                # OpenCode uses Unix milliseconds, convert to seconds
+                return timestamp_ms / 1000
+        except (json.JSONDecodeError, IOError, KeyError):
+            pass
+
+        return None

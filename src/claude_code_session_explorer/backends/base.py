@@ -135,6 +135,16 @@ class BaseTailer(ABC):
         """Get the timestamp of the first message."""
         ...
 
+    @abstractmethod
+    def get_last_message_timestamp(self) -> float | None:
+        """Get the timestamp of the last actual message.
+
+        Returns:
+            Unix timestamp (seconds since epoch) of the last message,
+            or None if no messages found.
+        """
+        ...
+
 
 class JsonlTailer(BaseTailer):
     """Base tailer for JSONL (JSON Lines) formatted session files.
