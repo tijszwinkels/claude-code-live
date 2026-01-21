@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
 from ..models import (
+    AUDIO_EXTENSIONS,
     DeleteFileRequest,
     DeleteFileResponse,
     EXTENSION_TO_LANGUAGE,
@@ -162,9 +163,11 @@ async def get_file_raw(path: str) -> Response:
     if not file_path.is_file():
         raise HTTPException(status_code=400, detail=f"Not a file: {path}")
 
-    # Determine content type from extension
+    # Determine content type from extension (check images, then audio, then fallback)
     extension = file_path.suffix.lower()
-    content_type = IMAGE_EXTENSIONS.get(extension, "application/octet-stream")
+    content_type = IMAGE_EXTENSIONS.get(
+        extension, AUDIO_EXTENSIONS.get(extension, "application/octet-stream")
+    )
 
     try:
         with open(file_path, "rb") as f:
@@ -276,9 +279,11 @@ async def download_file(path: str) -> Response:
         with open(file_path, "rb") as f:
             content = f.read()
 
-        # Determine content type from extension
+        # Determine content type from extension (check images, then audio, then fallback)
         extension = file_path.suffix.lower()
-        content_type = IMAGE_EXTENSIONS.get(extension, "application/octet-stream")
+        content_type = IMAGE_EXTENSIONS.get(
+            extension, AUDIO_EXTENSIONS.get(extension, "application/octet-stream")
+        )
 
         # Use filename for Content-Disposition
         filename = file_path.name

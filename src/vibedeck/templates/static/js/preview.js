@@ -10,12 +10,25 @@ const IMAGE_EXTENSIONS = new Set([
     'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'
 ]);
 
+// Audio file extensions that can be played in the preview pane
+const AUDIO_EXTENSIONS = new Set([
+    'mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'webm'
+]);
+
 /**
  * Check if a filename is an image file based on extension.
  */
 function isImageFile(filename) {
     const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
     return IMAGE_EXTENSIONS.has(ext);
+}
+
+/**
+ * Check if a filename is an audio file based on extension.
+ */
+function isAudioFile(filename) {
+    const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+    return AUDIO_EXTENSIONS.has(ext);
 }
 
 // Initialize preview pane width
@@ -215,6 +228,14 @@ export async function openPreviewPane(filePath) {
     if (isImageFile(filename)) {
         if (dom.previewFollowToggle) dom.previewFollowToggle.style.display = 'none';  // Hide Follow toggle for images
         renderImagePreview(filePath);
+        hidePreviewStatus();
+        return;
+    }
+
+    // Handle audio files differently - no file watching, just play
+    if (isAudioFile(filename)) {
+        if (dom.previewFollowToggle) dom.previewFollowToggle.style.display = 'none';  // Hide Follow toggle for audio
+        renderAudioPreview(filePath);
         hidePreviewStatus();
         return;
     }
@@ -459,6 +480,38 @@ function renderImagePreview(filePath) {
     };
 
     wrapper.appendChild(img);
+    dom.previewContent.appendChild(wrapper);
+}
+
+/**
+ * Render an audio file in the preview pane.
+ * Uses the /api/file/raw endpoint to serve the audio.
+ */
+function renderAudioPreview(filePath) {
+    if (!dom.previewContent) return;
+
+    dom.previewContent.innerHTML = '';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'audio-preview';
+
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    // Add timestamp to bust browser cache on reload
+    audio.src = `/api/file/raw?path=${encodeURIComponent(filePath)}&t=${Date.now()}`;
+
+    // Handle load error
+    audio.onerror = function() {
+        showPreviewStatus('error', 'Failed to load audio');
+    };
+
+    // Show filename
+    const filename = document.createElement('div');
+    filename.className = 'audio-filename';
+    filename.textContent = filePath.split('/').pop();
+
+    wrapper.appendChild(filename);
+    wrapper.appendChild(audio);
     dom.previewContent.appendChild(wrapper);
 }
 

@@ -762,6 +762,33 @@ button:hover .hamburger-icon span {
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
+/* Audio preview */
+.audio-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    min-height: 200px;
+    gap: 16px;
+}
+.audio-preview .audio-filename {
+    font-size: 14px;
+    color: var(--text-secondary);
+    word-break: break-all;
+    text-align: center;
+    max-width: 100%;
+}
+.audio-preview audio {
+    width: 100%;
+    max-width: 500px;
+    border-radius: 8px;
+}
+[data-theme="dark"] .audio-preview audio {
+    /* Dark mode audio player styling where supported */
+    filter: invert(1) hue-rotate(180deg);
+}
+
 /* Tree Node Styles */
 .tree-root {
     margin: 0;

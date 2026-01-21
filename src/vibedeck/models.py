@@ -150,3 +150,15 @@ IMAGE_EXTENSIONS = {
     ".ico": "image/x-icon",
     ".bmp": "image/bmp",
 }
+
+# Audio file extensions and their MIME types
+AUDIO_EXTENSIONS = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".aac": "audio/aac",
+    ".wma": "audio/x-ms-wma",
+    ".webm": "audio/webm",
+}
