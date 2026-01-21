@@ -501,5 +501,83 @@ def md(
         raise SystemExit(1)
 
 
+@main.command()
+@click.argument("search_phrase", type=str)
+@click.option(
+    "-n",
+    "--limit",
+    type=int,
+    default=5,
+    help="Maximum number of results to return (default: 5)",
+)
+@click.option(
+    "--include-subagents",
+    is_flag=True,
+    help="Include subagent sessions in search",
+)
+@click.option(
+    "--case-sensitive",
+    is_flag=True,
+    help="Make search case-sensitive (default: case-insensitive)",
+)
+@click.option(
+    "--show-tools",
+    is_flag=True,
+    help="Show tool calls and results (default: hide tools)",
+)
+@click.option(
+    "-c",
+    "--context",
+    type=int,
+    default=2,
+    help="Number of messages to show before and after each match (default: 2)",
+)
+def search(
+    search_phrase: str,
+    limit: int,
+    include_subagents: bool,
+    case_sensitive: bool,
+    show_tools: bool,
+    context: int,
+) -> None:
+    """Search session transcripts for a phrase.
+
+    Searches through all Claude Code sessions for the given phrase and outputs
+    matching sessions in markdown format with metadata headers.
+
+    Output format for each match:
+        ## /path/to/session.jsonl
+        created_at: YYYY-MM-DD HH:MM:SS
+        updated_at: YYYY-MM-DD HH:MM:SS
+        last_msg_at: YYYY-MM-DD HH:MM:SS
+        matches: N
+
+        <markdown content similar to 'md --hide-tools'>
+
+    Results are sorted by last message timestamp (most recent first).
+
+    Example:
+        vibedeck search "error handling"
+        vibedeck search "API endpoint" --limit 20
+        vibedeck search "TODO" --case-sensitive --show-tools
+    """
+    from .search import search_sessions
+
+    try:
+        result = search_sessions(
+            search_phrase,
+            limit=limit,
+            include_subagents=include_subagents,
+            case_insensitive=not case_sensitive,
+            hide_tools=not show_tools,
+            context_before=context,
+            context_after=context,
+        )
+        click.echo(result, nl=False)
+    except Exception as e:
+        click.echo(f"Error searching sessions: {e}", err=True)
+        raise SystemExit(1)
+
+
 if __name__ == "__main__":
     main()
