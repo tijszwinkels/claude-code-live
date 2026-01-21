@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..base import JsonlTailer
@@ -94,6 +95,43 @@ class ClaudeCodeTailer(JsonlTailer):
                             return self._first_timestamp
                     except json.JSONDecodeError:
                         continue
+        except (FileNotFoundError, IOError):
+            pass
+        return None
+
+    def get_last_message_timestamp(self) -> float | None:
+        """Get the timestamp of the last user/assistant message.
+
+        Reads the file backwards to find the last actual message,
+        ignoring summary entries added by Claude Code's summarization feature.
+
+        Returns:
+            Unix timestamp (seconds since epoch) of the last message,
+            or None if no messages found.
+        """
+        try:
+            # Read all lines and find the last user/assistant message
+            with open(self.path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            # Iterate backwards to find last actual message
+            for line in reversed(lines):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    # Only consider user/assistant messages, skip summary entries
+                    if obj.get("type") in ("user", "assistant"):
+                        timestamp_str = obj.get("timestamp")
+                        if timestamp_str:
+                            # Parse ISO timestamp to Unix timestamp
+                            dt = datetime.fromisoformat(
+                                timestamp_str.replace("Z", "+00:00")
+                            )
+                            return dt.timestamp()
+                except json.JSONDecodeError:
+                    continue
         except (FileNotFoundError, IOError):
             pass
         return None

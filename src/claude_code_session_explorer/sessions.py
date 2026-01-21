@@ -131,9 +131,15 @@ class SessionInfo:
         except Exception:
             started_at = None
 
+        # Use the last message timestamp instead of file mtime
+        # This avoids showing wrong "updated at" times when Claude Code
+        # appends summary entries to old session files
         try:
-            last_updated = self.path.stat().st_mtime
-        except OSError:
+            last_updated = self.tailer.get_last_message_timestamp()
+            if last_updated is None:
+                # Fall back to file mtime if no message timestamp available
+                last_updated = self.path.stat().st_mtime
+        except (OSError, AttributeError):
             last_updated = None
 
         # Get token usage stats if backend is available
@@ -213,12 +219,12 @@ def get_session(session_id: str) -> SessionInfo | None:
 
 
 def get_oldest_session_id() -> str | None:
-    """Find the oldest session by modification time."""
+    """Find the oldest session by last message timestamp."""
     if not _sessions:
         return None
     oldest = min(
         _sessions.items(),
-        key=lambda x: x[1].path.stat().st_mtime if x[1].path.exists() else float("inf"),
+        key=lambda x: _get_session_timestamp(x[1]) if _get_session_timestamp(x[1]) > 0 else float("inf"),
     )
     return oldest[0]
 
@@ -293,12 +299,26 @@ def remove_session(session_id: str) -> bool:
     return False
 
 
+def _get_session_timestamp(info: SessionInfo) -> float:
+    """Get the effective timestamp for a session (message timestamp or file mtime)."""
+    try:
+        ts = info.tailer.get_last_message_timestamp()
+        if ts is not None:
+            return ts
+    except AttributeError:
+        pass
+    try:
+        return info.path.stat().st_mtime if info.path.exists() else 0
+    except OSError:
+        return 0
+
+
 def get_sessions_list() -> list[dict]:
-    """Get list of all tracked sessions, sorted by modification time (newest first)."""
-    # Sort by file modification time, newest first
+    """Get list of all tracked sessions, sorted by last message time (newest first)."""
+    # Sort by last message timestamp, newest first
     sorted_sessions = sorted(
         _sessions.values(),
-        key=lambda info: info.path.stat().st_mtime if info.path.exists() else 0,
+        key=_get_session_timestamp,
         reverse=True,
     )
     return [info.to_dict() for info in sorted_sessions]

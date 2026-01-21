@@ -133,6 +133,15 @@ class SessionTailerProtocol(Protocol):
         """Get the timestamp of the first message."""
         ...
 
+    def get_last_message_timestamp(self) -> float | None:
+        """Get the timestamp of the last actual message (excluding summary entries).
+
+        Returns:
+            Unix timestamp (seconds since epoch) of the last user/assistant message,
+            or None if no messages found.
+        """
+        ...
+
 
 @runtime_checkable
 class MessageRendererProtocol(Protocol):
