@@ -119,18 +119,16 @@ class TestConfig:
         serve_config = config.get_for_command("serve")
         assert serve_config.port == 8765
 
-    def test_experimental_options_in_serve(self, tmp_path):
-        """Should support experimental/hidden options in config."""
+    def test_send_options_in_serve(self, tmp_path):
+        """Should support send-related options in config."""
         config_file = tmp_path / "config.toml"
         config_file.write_text("""
 [serve]
-experimental = true
-enable_send = true
+disable_send = true
 fork = true
 """)
         config = load_config(config_paths=[config_file])
-        assert config.serve.experimental is True
-        assert config.serve.enable_send is True
+        assert config.serve.disable_send is True
         assert config.serve.fork is True
 
 

@@ -24,9 +24,8 @@
 # summary_prompt_file = "~/.config/vibedeck/prompt.txt"  # Custom prompt template file
 # summary_log_keys = ["title", "short_summary", "summary_generated_at", "session_id", "path"]  # Keys to include in log
 
-# Experimental features (use with caution)
-# experimental = false           # Enable experimental features
-# enable_send = false            # Allow sending messages to sessions
+# Message sending options (sending enabled by default)
+# disable_send = false           # Set to true to disable sending messages to sessions
 # dangerously_skip_permissions = false  # Skip Claude permission prompts
 # fork = false                   # Enable session forking
 # default_send_backend = "claude-code"  # Default backend for new sessions

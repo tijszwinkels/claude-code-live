@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**VibeDeck** is a live-updating transcript viewer and static exporter for Claude Code and OpenCode sessions. Optionally functions as a **web-based frontend** (like Conductor) for sending messages and forking sessions. Enable with `--enable-send` and `--fork` flags.
+**VibeDeck** is a live-updating transcript viewer and static exporter for Claude Code and OpenCode sessions. Also functions as a **web-based frontend** (like Conductor) for sending messages to sessions. Message sending is enabled by default; use `--disable-send` to turn it off. Use `--fork` to enable session forking.
 
 ## Commands
 

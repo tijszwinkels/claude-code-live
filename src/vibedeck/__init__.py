@@ -70,35 +70,26 @@ def main() -> None:
     help="Backend to use: 'all' for all backends (default), or a specific backend name",
 )
 @click.option(
-    "--experimental",
+    "--disable-send",
     is_flag=True,
-    hidden=True,
-    help="Enable experimental features (required for --enable-send)",
-)
-@click.option(
-    "--enable-send",
-    is_flag=True,
-    hidden=True,
-    help="Enable sending messages to Claude Code sessions (requires --experimental)",
+    help="Disable sending messages to Claude Code sessions (enabled by default)",
 )
 @click.option(
     "--dangerously-skip-permissions",
     is_flag=True,
     hidden=True,
-    help="Pass --dangerously-skip-permissions to Claude CLI (requires --experimental --enable-send)",
+    help="Pass --dangerously-skip-permissions to Claude CLI",
 )
 @click.option(
     "--fork",
     is_flag=True,
-    hidden=True,
-    help="Enable fork button to create new sessions from messages (requires --experimental --enable-send)",
+    help="Enable fork button to create new sessions from messages",
 )
 @click.option(
     "--default-send-backend",
     type=click.Choice(list_backends()),
     default=None,
-    hidden=True,
-    help="Default backend for new sessions (requires --experimental --enable-send)",
+    help="Default backend for new sessions",
 )
 @click.option(
     "--include-subagents",
@@ -164,8 +155,7 @@ def serve(
     debug: bool,
     max_sessions: int,
     backend: str,
-    experimental: bool,
-    enable_send: bool,
+    disable_send: bool,
     dangerously_skip_permissions: bool,
     fork: bool,
     default_send_backend: str | None,
@@ -194,26 +184,22 @@ def serve(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Validate experimental flag requirements
-    if enable_send and not experimental:
-        click.echo("Error: --enable-send requires --experimental flag", err=True)
-        click.echo(
-            "This feature is experimental and has known security limitations.", err=True
-        )
-        raise SystemExit(1)
+    # Send is enabled by default, disable_send turns it off
+    enable_send = not disable_send
 
+    # Validate flag requirements
     if dangerously_skip_permissions and not enable_send:
         click.echo(
-            "Error: --dangerously-skip-permissions requires --enable-send", err=True
+            "Error: --dangerously-skip-permissions requires send to be enabled (don't use --disable-send)", err=True
         )
         raise SystemExit(1)
 
     if fork and not enable_send:
-        click.echo("Error: --fork requires --enable-send", err=True)
+        click.echo("Error: --fork requires send to be enabled (don't use --disable-send)", err=True)
         raise SystemExit(1)
 
     if default_send_backend and not enable_send:
-        click.echo("Error: --default-send-backend requires --enable-send", err=True)
+        click.echo("Error: --default-send-backend requires send to be enabled (don't use --disable-send)", err=True)
         raise SystemExit(1)
 
     # Initialize backend
@@ -266,11 +252,8 @@ def serve(
     if summarize_after_idle_for:
         click.echo(f"Summarize after idle: {summarize_after_idle_for}s")
 
-    if enable_send:
-        click.echo(
-            "⚠️  EXPERIMENTAL: Send feature enabled - messages can be sent to Claude Code sessions"
-        )
-        click.echo("   This feature has known security limitations. Use with caution.")
+    if disable_send:
+        click.echo("Message sending is disabled (--disable-send)")
     if dangerously_skip_permissions:
         click.echo(
             "⚠️  WARNING: --dangerously-skip-permissions enabled - Claude will skip permission prompts"

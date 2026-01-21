@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 CATCHUP_TIMEOUT = (
     30  # seconds - max time for catchup before telling client to reinitialize
 )
-_send_enabled = False  # Enable with --enable-send CLI flag
+_send_enabled = True  # Enabled by default, disable with --disable-send CLI flag
 _skip_permissions = False  # Enable with --dangerously-skip-permissions CLI flag
 _fork_enabled = False  # Enable with --fork CLI flag
 _default_send_backend: str | None = None  # Enable with --default-send-backend CLI flag

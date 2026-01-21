@@ -112,7 +112,7 @@ async def send_message(session_id: str, request: SendMessageRequest) -> dict:
     if not _server_state["is_send_enabled"]():
         raise HTTPException(
             status_code=403,
-            detail="Send feature is disabled. Start server with --enable-send to enable.",
+            detail="Send feature is disabled. Remove --disable-send flag to enable.",
         )
 
     info = get_session(session_id)
@@ -204,7 +204,7 @@ async def grant_permission(
     if not _server_state["is_send_enabled"]():
         raise HTTPException(
             status_code=403,
-            detail="Send feature is disabled. Start server with --enable-send to enable.",
+            detail="Send feature is disabled. Remove --disable-send flag to enable.",
         )
 
     info = get_session(session_id)
@@ -273,7 +273,7 @@ async def grant_permission_new_session(request: GrantPermissionNewSessionRequest
     if not _server_state["is_send_enabled"]():
         raise HTTPException(
             status_code=403,
-            detail="Send feature is disabled. Start server with --enable-send to enable.",
+            detail="Send feature is disabled. Remove --disable-send flag to enable.",
         )
 
     if not request.original_message.strip():
@@ -353,7 +353,7 @@ async def allow_directory(request: AllowDirectoryRequest) -> dict:
     if not _server_state["is_send_enabled"]():
         raise HTTPException(
             status_code=403,
-            detail="Send feature is disabled. Start server with --enable-send to enable.",
+            detail="Send feature is disabled. Remove --disable-send flag to enable.",
         )
 
     if not request.directory:
@@ -382,7 +382,7 @@ async def interrupt_session(session_id: str) -> dict:
     if not _server_state["is_send_enabled"]():
         raise HTTPException(
             status_code=403,
-            detail="Send feature is disabled. Start server with --enable-send to enable.",
+            detail="Send feature is disabled. Remove --disable-send flag to enable.",
         )
 
     info = get_session(session_id)
@@ -461,7 +461,7 @@ async def create_new_session(request: NewSessionRequest) -> dict:
     if not _server_state["is_send_enabled"]():
         raise HTTPException(
             status_code=403,
-            detail="Send feature is disabled. Start server with --enable-send to enable.",
+            detail="Send feature is disabled. Remove --disable-send flag to enable.",
         )
 
     backend = _server_state["get_server_backend"]()

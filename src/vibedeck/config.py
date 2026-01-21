@@ -31,9 +31,8 @@ class ServeConfig:
     max_sessions: int = 100
     backend: str = "all"
     include_subagents: bool = False
-    # Experimental/hidden options
-    experimental: bool = False
-    enable_send: bool = False
+    # Send options (enabled by default)
+    disable_send: bool = False  # Set to True to disable message sending
     dangerously_skip_permissions: bool = False
     fork: bool = False
     default_send_backend: str | None = None
@@ -128,8 +127,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_sessions": 100,
         "backend": "all",
         "include_subagents": False,
-        "experimental": False,
-        "enable_send": False,
+        "disable_send": False,  # Send enabled by default
         "dangerously_skip_permissions": False,
         "fork": False,
         "default_send_backend": None,
