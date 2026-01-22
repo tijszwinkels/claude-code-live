@@ -1,68 +1,35 @@
 # VibeDeck GUI Commands
 
-VibeDeck supports special command blocks that allow LLMs to control the GUI during a conversation. Commands are embedded in markdown code blocks with the `vibedeck` language tag.
-
-## Command Syntax
-
-Commands use XML-like syntax inside a fenced code block:
+VibeDeck is a GUI wrapper for Claude Code. If you see this text, this session is likely running within VibeDeck. You can control the GUI using special command blocks:
 
 ~~~markdown
 ```vibedeck
-<openFile path="~/project/src/main.py" />
+<openFile path="/full/path/to/file.py" />
 ```
 ~~~
 
-## Available Commands
+## Commands
 
 ### openFile
 
-Opens a file in the VibeDeck preview pane.
+Opens a file in the preview pane. Use full paths (`/home/...` or `~/...`).
 
-**Attributes:**
-- `path` (required): File path. Supports:
-  - Absolute paths: `/home/user/file.txt`
-  - Home-relative paths: `~/file.txt`
-  - Relative paths: `src/main.py` (resolved against the session's project directory)
-- `line` (optional): Line number to scroll to (1-indexed)
-- `follow` (optional): Set to `"true"` to enable follow mode (auto-scroll on file changes)
-
-**Examples:**
+- `path` (required): Absolute or home-relative path
+- `line` (optional): Line number to scroll to
+- `follow` (optional): `"true"` to auto-scroll on file changes (for logfiles)
 
 ```vibedeck
-<openFile path="src/components/Button.tsx" />
+<openFile path="~/project/src/main.py" line="42" />
 ```
 
 ```vibedeck
-<openFile path="~/project/logs/app.log" follow="true" />
-```
-
-```vibedeck
-<openFile path="/home/user/project/src/main.py" line="42" />
+<openFile path="/home/user/logs/app.log" follow="true" />
 ```
 
 ### openUrl
 
-Opens a URL in a sandboxed iframe in the preview pane.
-
-**Attributes:**
-- `url` (required): URL to display. Must be `http://` or `https://`.
-
-**Example:**
+Opens a URL in a sandboxed iframe.
 
 ```vibedeck
 <openUrl url="http://localhost:3000" />
-```
-
-## Security Notes
-
-- File paths are restricted to the user's home directory
-- URLs are displayed in a sandboxed iframe with restricted permissions
-- Local HTML files are sandboxed without `allow-same-origin` to prevent access to VibeDeck's storage
-
-## Integration
-
-Add this file as a prompt include in your CLAUDE.md or system prompt to enable GUI command support:
-
-```markdown
-@prompts/gui-commands.md
 ```
