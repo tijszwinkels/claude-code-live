@@ -5,38 +5,68 @@
 
 import { state } from './state.js';
 
+// Counter for unique command IDs
+let commandIdCounter = 0;
+
 /**
- * Parse and execute VibeDeck commands from HTML content.
- * Commands are executed but kept visible in the output.
+ * Parse VibeDeck commands from HTML content, add execute buttons, and optionally auto-execute.
  *
  * @param {string} html - HTML content that may contain vibedeck commands
  * @param {string} sessionId - Current session ID for path resolution
- * @returns {string} HTML (unmodified)
+ * @param {boolean} autoExecute - If true, execute commands immediately (for live streaming)
+ * @returns {string} HTML with execute buttons added to vibedeck blocks
  */
-export function parseAndExecuteCommands(html, sessionId) {
+export function parseAndExecuteCommands(html, sessionId, autoExecute = true) {
     // Match <pre><code class="language-vibedeck">...</code></pre> blocks
-    // These are rendered from ```vibedeck markdown code blocks
-    const vibedeckPattern = /<pre><code[^>]*class="[^"]*language-vibedeck[^"]*"[^>]*>([\s\S]*?)<\/code><\/pre>/gi;
+    const vibedeckPattern = /<pre><code([^>]*class="[^"]*language-vibedeck[^"]*"[^>]*)>([\s\S]*?)<\/code><\/pre>/gi;
 
-    let match;
-    // Create a copy for iteration since we'll modify the string
-    const htmlCopy = html;
+    // Replace each vibedeck block with one that has an execute button
+    const modifiedHtml = html.replace(vibedeckPattern, (match, attrs, content) => {
+        const commandId = `vibedeck-cmd-${++commandIdCounter}`;
+        const commandBlock = decodeHtmlEntities(content);
 
-    while ((match = vibedeckPattern.exec(htmlCopy)) !== null) {
-        // Decode HTML entities in the code block content
-        const commandBlock = decodeHtmlEntities(match[1]);
-        console.log('[VibeDeck] Found command block:', commandBlock.trim());
-        executeCommandBlock(commandBlock, sessionId);
-    }
+        // Store command data for later execution
+        pendingCommands.set(commandId, { block: commandBlock, sessionId });
 
-    // Keep vibedeck code blocks visible in output (don't strip them)
-    return html;
+        // Auto-execute if streaming (not catchup)
+        if (autoExecute) {
+            executeCommandBlock(commandBlock, sessionId);
+        }
+
+        // Add execute button outside the code block, at top-right
+        const buttonHtml = `<button class="vibedeck-execute-btn" data-command-id="${commandId}" title="Execute command">▶</button>`;
+
+        return `<div class="vibedeck-command-wrapper">${buttonHtml}<pre><code${attrs}>${content}</code></pre></div>`;
+    });
+
+    return modifiedHtml;
+}
+
+// Store pending commands for manual execution
+const pendingCommands = new Map();
+
+/**
+ * Initialize click handlers for vibedeck execute buttons.
+ * Call this after the DOM is ready.
+ */
+export function initCommandButtons() {
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.vibedeck-execute-btn');
+        if (!btn) return;
+
+        const commandId = btn.dataset.commandId;
+        const command = pendingCommands.get(commandId);
+        if (command) {
+            executeCommandBlock(command.block, command.sessionId);
+            // Visual feedback
+            btn.textContent = '✓';
+            setTimeout(() => btn.textContent = '▶', 1000);
+        }
+    });
 }
 
 /**
  * Decode HTML entities in text.
- * @param {string} text - Text with HTML entities
- * @returns {string} Decoded text
  */
 function decodeHtmlEntities(text) {
     const textarea = document.createElement('textarea');
@@ -46,14 +76,8 @@ function decodeHtmlEntities(text) {
 
 /**
  * Execute a single command block.
- * @param {string} block - The command block content (XML-like syntax)
- * @param {string} sessionId - Current session ID
  */
 function executeCommandBlock(block, sessionId) {
-    // Parse XML-like commands
-    // <openFile path="..." follow="true" line="42" />
-    // <openUrl url="..." />
-
     const openFileMatch = block.match(/<openFile\s+([^>]*)\/>/i);
     if (openFileMatch) {
         const attrs = parseAttributes(openFileMatch[1]);
@@ -73,8 +97,6 @@ function executeCommandBlock(block, sessionId) {
 
 /**
  * Parse XML-style attributes from a string.
- * @param {string} attrString - String like 'path="value" follow="true"'
- * @returns {Object} Parsed attributes
  */
 function parseAttributes(attrString) {
     const attrs = {};
@@ -88,42 +110,32 @@ function parseAttributes(attrString) {
 
 /**
  * Execute an openFile command.
- * @param {Object} attrs - Command attributes {path, follow, line}
- * @param {string} sessionId - Current session ID
  */
 async function executeOpenFile(attrs, sessionId) {
     const { path, follow, line } = attrs;
-    console.log('[VibeDeck] executeOpenFile:', { path, follow, line, sessionId });
     if (!path) {
         console.warn('openFile: missing path attribute');
         return;
     }
 
     try {
-        // Resolve the path (handles ~, relative paths, etc.)
         const resolvedPath = await resolvePath(path, sessionId);
-        console.log('[VibeDeck] Resolved path:', resolvedPath);
         if (!resolvedPath) {
             console.warn('openFile: path resolution failed for', path);
             return;
         }
 
-        // Import preview functions dynamically to avoid circular dependencies
         const { openPreviewPane, setFollowMode, scrollToLine } = await import('./preview.js');
 
-        // Set follow mode if specified (before opening to affect initial state)
         if (follow === 'true') {
             setFollowMode(true);
         }
 
-        // Open the file
         await openPreviewPane(resolvedPath);
 
-        // Jump to line if specified (after file is loaded)
         if (line) {
             const lineNum = parseInt(line, 10);
             if (!isNaN(lineNum) && lineNum > 0) {
-                // Small delay to ensure content is rendered
                 setTimeout(() => scrollToLine(lineNum), 100);
             }
         }
@@ -134,7 +146,6 @@ async function executeOpenFile(attrs, sessionId) {
 
 /**
  * Execute an openUrl command.
- * @param {Object} attrs - Command attributes {url}
  */
 async function executeOpenUrl(attrs) {
     const { url } = attrs;
@@ -143,7 +154,6 @@ async function executeOpenUrl(attrs) {
         return;
     }
 
-    // Validate URL (http/https only)
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
         console.warn('openUrl: invalid URL scheme, must be http or https');
         return;
@@ -159,10 +169,6 @@ async function executeOpenUrl(attrs) {
 
 /**
  * Resolve a path using the server API.
- * Handles ~ expansion and relative path resolution.
- * @param {string} path - Path to resolve
- * @param {string} sessionId - Session ID for relative path context
- * @returns {Promise<string|null>} Resolved absolute path or null if not found
  */
 async function resolvePath(path, sessionId) {
     try {
