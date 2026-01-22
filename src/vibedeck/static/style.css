@@ -217,7 +217,7 @@ pre code { background: none; padding: 0; }
 .session-item .session-meta-sep { color: var(--text-muted); margin: 0 4px; font-size: 0.7rem; }
 .session-item .new-in-folder-btn { display: none; }
 .session-item.session-mode { flex-direction: column; align-items: flex-start; padding: 8px 12px 8px 20px; gap: 2px; position: relative; border-radius: 6px; margin: 3px 6px; background: rgba(0,0,0,0.03); }
-.session-item.session-mode .session-title { font-weight: 500; }
+.session-item.session-mode .session-title { font-weight: 500; width: 100%; }
 .session-item.session-mode .session-project-row { display: flex; align-items: center; width: 100%; gap: 4px; }
 .session-item.session-mode .session-project { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-item.session-mode .session-meta { display: flex; align-items: center; flex-shrink: 0; gap: 6px; }
