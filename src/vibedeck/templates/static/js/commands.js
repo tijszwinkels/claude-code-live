@@ -2,6 +2,21 @@
 //
 // Commands are embedded as ```vibedeck code blocks in the LLM's markdown output,
 // which get rendered as <pre><code class="language-vibedeck"> in HTML.
+//
+// ## Adding a New Command
+//
+// 1. Add a regex match in executeCommandBlock() to detect your command:
+//      const myCommandMatch = block.match(/<myCommand\s+([^>]*)\/>/i);
+//
+// 2. Create an async execute function (e.g., executeMyCommand(attrs, sessionId)):
+//    - Parse attributes using parseAttributes()
+//    - Implement the command logic
+//    - Use dynamic imports for preview.js functions to avoid circular deps
+//
+// 3. Update prompts/gui-commands.md to document the new command for LLMs
+//    (without this, LLMs won't know the command exists!)
+//
+// 4. If the command needs new preview.js functions, add and export them there
 
 import { state } from './state.js';
 
