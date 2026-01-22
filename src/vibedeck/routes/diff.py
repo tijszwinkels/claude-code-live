@@ -13,6 +13,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/diff")
 
+# Maximum file size to read for untracked files (1MB)
+MAX_FILE_SIZE = 1024 * 1024
+
+# Binary file extensions to skip
+BINARY_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
+    ".exe", ".dll", ".so", ".dylib", ".bin",
+    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv",
+    ".ttf", ".otf", ".woff", ".woff2", ".eot",
+    ".pyc", ".pyo", ".class", ".o", ".a",
+}
+
 
 def _run_git_command(
     cwd: Path, *args: str, check: bool = True
@@ -98,20 +112,41 @@ def _get_changed_files_uncommitted(cwd: Path) -> list[dict[str, Any]]:
                         }
                     )
 
-    # Get untracked files
+    # Get untracked files (use -- to prevent path injection)
     result = _run_git_command(
-        cwd, "ls-files", "--others", "--exclude-standard", check=False
+        cwd, "ls-files", "--others", "--exclude-standard", "--", check=False
     )
     if result.returncode == 0 and result.stdout.strip():
         for path in result.stdout.strip().split("\n"):
             if not path:
                 continue
-            # Count lines in untracked file
             file_path = cwd / path
+
+            # Skip binary files
+            if file_path.suffix.lower() in BINARY_EXTENSIONS:
+                files.append(
+                    {
+                        "path": path,
+                        "additions": 0,
+                        "deletions": 0,
+                        "status": "untracked",
+                        "binary": True,
+                    }
+                )
+                continue
+
+            # Count lines in untracked file (with size limit)
             if file_path.is_file():
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                        lines = len(f.readlines())
+                    file_size = file_path.stat().st_size
+                    if file_size > MAX_FILE_SIZE:
+                        # Large file - estimate lines
+                        lines = file_size // 50  # rough estimate
+                    else:
+                        with open(
+                            file_path, "r", encoding="utf-8", errors="replace"
+                        ) as f:
+                            lines = len(f.readlines())
                 except Exception:
                     lines = 0
                 files.append(

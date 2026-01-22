@@ -495,13 +495,3 @@ function renderNoChanges() {
     }
 }
 
-/**
- * Check if a file path corresponds to a file with changes.
- * Used to determine if clicking an edit tool should open diff view.
- */
-export function hasFileChanges(filePath) {
-    if (!state.diffFiles || state.diffFiles.length === 0) {
-        return false;
-    }
-    return state.diffFiles.some(f => filePath.endsWith(f.path));
-}
