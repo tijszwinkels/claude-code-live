@@ -117,7 +117,24 @@ def render_content_block(block: dict) -> str:
                 content_html = commit_html
             else:
                 content_html = f"<pre>{html.escape(content)}</pre>"
-        elif isinstance(content, list) or is_json_like(content):
+        elif isinstance(content, list):
+            # Check if this is a list containing image blocks (from Read tool on images)
+            content_parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image":
+                    source = item.get("source", {})
+                    media_type = source.get("media_type", "image/png")
+                    data = source.get("data", "")
+                    content_parts.append(macros.image_block(media_type, data))
+                elif isinstance(item, dict) and item.get("type") == "text":
+                    # Text blocks within tool results
+                    text = item.get("text", "")
+                    content_parts.append(f"<pre>{html.escape(text)}</pre>")
+                else:
+                    # Fallback: render as JSON
+                    content_parts.append(format_json(item))
+            content_html = "".join(content_parts)
+        elif is_json_like(content):
             content_html = format_json(content)
         else:
             content_html = format_json(content)
