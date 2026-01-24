@@ -4,7 +4,26 @@ Live-updating transcript viewer and web frontend for Claude Code and OpenCode se
 
 ## Overview
 
-VibeDeck provides real-time updates as your coding session progresses. New messages appear automatically within ~1 second. It can also function as a web-based frontend (like Conductor) for sending messages and forking sessions.
+VibeDeck is a front-end to Claude Code and OpenCode.
+
+![VibeDeck Interface](docs/screenshot.png)
+
+Mainly designed to:
+
+- Get an overview on what exactly the LLM did and why, as quickly as possible.
+- Keep track of many sessions and tasks running in parallel. Don't lose track as you kick off edits in multiple worktrees and/or projects.
+
+## Features
+
+* Designed to get a quick & complete overview of everything the coding-agent is doing. Keeps a list of changed files. All paths in the session are clickable to immediately open in the file-viewer. URLs are clickable to copy to clipboard.
+* Watches the file-system. View sessions that initiated inside VibeDeck, as well as cli, IDE integration, etc. Everything in one place.
+* Automatically generate titles and summaries for all Claude Code sessions. Automatically color by 'TODO', 'In Progress', 'Waiting for input' or 'Done'. Automatically detect branch/worktrees.
+* full-fledged Claude Code interface in the browser. Run locally or in a remote dev environment.
+* Built-in file-browser with Browsing / Upload / Download / Delete file
+* File preview: Text / Code / MD / Images / Audio / HTML / Git Diff
+* File-tail functionality (follow) for logfiles
+* Tooling for generating transcripts of Claude Code sessions, and searching previous sessions.
+
 
 ## Installation
 
