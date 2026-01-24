@@ -336,7 +336,7 @@ def resolve_session_path(session_arg: str) -> Path:
 
 
 @main.command()
-@click.argument("session_file", type=str)
+@click.argument("session_file", type=str, required=False)
 @click.option(
     "-o",
     "--output",
@@ -376,8 +376,13 @@ def resolve_session_path(session_arg: str) -> Path:
     is_flag=True,
     help="Hide tool calls and results, showing only user/assistant conversation",
 )
+@click.option(
+    "--phrase",
+    type=str,
+    help="Find session by unique verification phrase (searches today and yesterday)",
+)
 def html(
-    session_file: str,
+    session_file: str | None,
     output: Path | None,
     output_auto: bool,
     repo: str | None,
@@ -385,6 +390,7 @@ def html(
     open_browser: bool,
     include_json: bool,
     hide_tools: bool,
+    phrase: str | None,
 ) -> None:
     """Export a session transcript to static HTML files.
 
@@ -393,10 +399,12 @@ def html(
     message content and tool usage.
 
     SESSION_FILE can be a Claude Code .jsonl file path or an OpenCode session ID.
+    Alternatively, use --phrase to find a session by a unique verification phrase.
 
     Example:
         vibedeck html session.jsonl -o ./output
         vibedeck html ses_xxx -o ./output
+        vibedeck html --phrase "unique phrase from conversation" --gist
     """
     from .export import (
         generate_html,
@@ -407,8 +415,23 @@ def html(
     import shutil
     import tempfile
 
-    # Resolve session file (can be path or OpenCode session ID)
-    session_path = resolve_session_path(session_file)
+    # Validate arguments: need either session_file or --phrase
+    if session_file is None and phrase is None:
+        raise click.UsageError("Either SESSION_FILE or --phrase is required")
+    if session_file is not None and phrase is not None:
+        raise click.UsageError("Cannot use both SESSION_FILE and --phrase")
+
+    # Resolve session path
+    if phrase is not None:
+        from .search import find_session_by_phrase
+        try:
+            session_path = find_session_by_phrase(phrase)
+            click.echo(f"Found session: {session_path}")
+        except ValueError as e:
+            raise click.ClickException(str(e))
+    else:
+        # Resolve session file (can be path or OpenCode session ID)
+        session_path = resolve_session_path(session_file)
 
     # Determine output directory
     if output_auto:
@@ -455,7 +478,7 @@ def html(
 
 
 @main.command()
-@click.argument("session_file", type=str)
+@click.argument("session_file", type=str, required=False)
 @click.option(
     "-o",
     "--output",
@@ -467,10 +490,16 @@ def html(
     is_flag=True,
     help="Hide tool calls and results, showing only user/assistant conversation",
 )
+@click.option(
+    "--phrase",
+    type=str,
+    help="Find session by unique verification phrase (searches today and yesterday)",
+)
 def md(
-    session_file: str,
+    session_file: str | None,
     output: Path | None,
     hide_tools: bool,
+    phrase: str | None,
 ) -> None:
     """Export a session transcript to Markdown.
 
@@ -478,16 +507,34 @@ def md(
     and tool usage formatted for readability.
 
     SESSION_FILE can be a Claude Code .jsonl file path or an OpenCode session ID.
+    Alternatively, use --phrase to find a session by a unique verification phrase.
 
     Example:
         vibedeck md session.jsonl > transcript.md
         vibedeck md session.jsonl -o transcript.md
         vibedeck md ses_xxx -o transcript.md
+        vibedeck md --phrase "unique phrase from conversation"
     """
     from .export import export_markdown
 
-    # Resolve session file (can be path or OpenCode session ID)
-    session_path = resolve_session_path(session_file)
+    # Validate arguments: need either session_file or --phrase
+    if session_file is None and phrase is None:
+        raise click.UsageError("Either SESSION_FILE or --phrase is required")
+    if session_file is not None and phrase is not None:
+        raise click.UsageError("Cannot use both SESSION_FILE and --phrase")
+
+    # Resolve session path
+    if phrase is not None:
+        from .search import find_session_by_phrase
+        try:
+            session_path = find_session_by_phrase(phrase)
+            # Output to stderr so it doesn't interfere with stdout piping
+            click.echo(f"Found session: {session_path}", err=True)
+        except ValueError as e:
+            raise click.ClickException(str(e))
+    else:
+        # Resolve session file (can be path or OpenCode session ID)
+        session_path = resolve_session_path(session_file)
 
     try:
         result = export_markdown(session_path, output, hide_tools=hide_tools)

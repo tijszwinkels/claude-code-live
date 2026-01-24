@@ -371,6 +371,98 @@ def format_search_result(result: SearchResult, hide_tools: bool = True) -> str:
     return "\n".join(lines)
 
 
+def find_session_by_phrase(
+    phrase: str,
+    max_days_ago: int = 1,
+    include_subagents: bool = False,
+) -> Path:
+    """Find a single session containing the given phrase.
+
+    Searches sessions from the last N days for the phrase. Returns the session
+    path if exactly one match is found. Raises an error if zero or multiple
+    matches are found.
+
+    This is designed for "verification phrase" workflows where the user generates
+    a unique phrase in the conversation and uses it to identify the session.
+
+    Args:
+        phrase: The unique phrase to search for
+        max_days_ago: Only search sessions modified in the last N days (default: 1 = today and yesterday)
+        include_subagents: Whether to include subagent sessions
+
+    Returns:
+        Path to the matching session file
+
+    Raises:
+        ValueError: If zero or multiple sessions match the phrase
+    """
+    from datetime import datetime, timedelta
+
+    # Get all registered backends
+    backends = get_all_backends()
+
+    if not backends:
+        raise ValueError("No backends available")
+
+    # Calculate cutoff time (start of N days ago)
+    cutoff = datetime.now() - timedelta(days=max_days_ago + 1)
+    cutoff = cutoff.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Collect recent session candidates from all backends
+    candidates: list[tuple[Path, CodingToolBackend]] = []
+
+    for backend in backends:
+        try:
+            # Get recent sessions
+            sessions = backend.find_recent_sessions(
+                limit=1000, include_subagents=include_subagents
+            )
+            for session_path in sessions:
+                # Filter by modification time
+                try:
+                    mtime = datetime.fromtimestamp(session_path.stat().st_mtime)
+                    if mtime >= cutoff:
+                        candidates.append((session_path, backend))
+                except OSError:
+                    continue
+        except Exception:
+            continue
+
+    if not candidates:
+        raise ValueError(
+            f"No sessions found from the last {max_days_ago + 1} day(s)"
+        )
+
+    # Search each session for the phrase
+    matching_sessions: list[Path] = []
+    for session_path, backend in candidates:
+        try:
+            entries, entry_backend = parse_session_entries(session_path)
+            match_indices, _ = search_entries_for_phrase(
+                entries, phrase, entry_backend, case_insensitive=True, hide_tools=False
+            )
+            if match_indices:
+                matching_sessions.append(session_path)
+        except Exception:
+            continue
+
+    if len(matching_sessions) == 0:
+        raise ValueError(
+            f"Phrase not found in any of the {len(candidates)} session(s) "
+            f"from the last {max_days_ago + 1} day(s): {phrase!r}"
+        )
+
+    if len(matching_sessions) > 1:
+        session_list = "\n  - ".join(str(p) for p in matching_sessions)
+        raise ValueError(
+            f"Phrase found in {len(matching_sessions)} sessions (expected exactly 1):\n"
+            f"  - {session_list}\n"
+            f"Use a more unique phrase or specify the session file directly."
+        )
+
+    return matching_sessions[0]
+
+
 def search_sessions(
     search_phrase: str,
     limit: int = 10,
