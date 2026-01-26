@@ -27,6 +27,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
+# Directories allowed for file access (prevents path traversal attacks)
+ALLOWED_DIRECTORIES = [Path.home(), Path("/tmp")]
+
+
+def is_path_allowed(path: Path) -> bool:
+    """Check if a path is within allowed directories.
+
+    Args:
+        path: Path to check (should already be resolved).
+
+    Returns:
+        True if path is within an allowed directory, False otherwise.
+    """
+    for allowed_dir in ALLOWED_DIRECTORIES:
+        try:
+            path.relative_to(allowed_dir)
+            return True
+        except ValueError:
+            continue
+    return False
+
 
 @router.get("/file")
 async def get_file(path: str) -> FileResponse:
@@ -44,16 +65,12 @@ async def get_file(path: str) -> FileResponse:
     """
     file_path = Path(path)
 
-    # Security: Restrict to user's home directory to prevent path traversal
-    home_dir = Path.home()
-    try:
-        resolved_path = file_path.resolve()
-        # Check if resolved path is within home directory
-        resolved_path.relative_to(home_dir)
-    except ValueError:
+    # Security: Restrict to allowed directories to prevent path traversal
+    resolved_path = file_path.resolve()
+    if not is_path_allowed(resolved_path):
         raise HTTPException(
             status_code=403,
-            detail=f"Access denied: path must be within home directory ({home_dir})",
+            detail="Access denied: path must be within allowed directories",
         )
 
     # Validate path exists
@@ -145,15 +162,12 @@ async def get_file_raw(path: str) -> Response:
     """
     file_path = Path(path)
 
-    # Security: Restrict to user's home directory to prevent path traversal
-    home_dir = Path.home()
-    try:
-        resolved_path = file_path.resolve()
-        resolved_path.relative_to(home_dir)
-    except ValueError:
+    # Security: Restrict to allowed directories to prevent path traversal
+    resolved_path = file_path.resolve()
+    if not is_path_allowed(resolved_path):
         raise HTTPException(
             status_code=403,
-            detail=f"Access denied: path must be within home directory ({home_dir})",
+            detail="Access denied: path must be within allowed directories",
         )
 
     # Validate path exists
@@ -200,15 +214,12 @@ async def delete_file(request: DeleteFileRequest) -> DeleteFileResponse:
     """
     file_path = Path(request.path)
 
-    # Security: Restrict to user's home directory to prevent path traversal
-    home_dir = Path.home()
-    try:
-        resolved_path = file_path.resolve()
-        resolved_path.relative_to(home_dir)
-    except ValueError:
+    # Security: Restrict to allowed directories to prevent path traversal
+    resolved_path = file_path.resolve()
+    if not is_path_allowed(resolved_path):
         return DeleteFileResponse(
             success=False,
-            error=f"Access denied: path must be within home directory ({home_dir})",
+            error="Access denied: path must be within allowed directories",
         )
 
     # Validate path exists
@@ -257,15 +268,12 @@ async def download_file(path: str) -> Response:
     """
     file_path = Path(path)
 
-    # Security: Restrict to user's home directory to prevent path traversal
-    home_dir = Path.home()
-    try:
-        resolved_path = file_path.resolve()
-        resolved_path.relative_to(home_dir)
-    except ValueError:
+    # Security: Restrict to allowed directories to prevent path traversal
+    resolved_path = file_path.resolve()
+    if not is_path_allowed(resolved_path):
         raise HTTPException(
             status_code=403,
-            detail=f"Access denied: path must be within home directory ({home_dir})",
+            detail="Access denied: path must be within allowed directories",
         )
 
     # Validate path exists
@@ -319,15 +327,12 @@ async def upload_file(
     """
     dir_path = Path(directory)
 
-    # Security: Restrict to user's home directory
-    home_dir = Path.home()
-    try:
-        resolved_dir = dir_path.resolve()
-        resolved_dir.relative_to(home_dir)
-    except ValueError:
+    # Security: Restrict to allowed directories
+    resolved_dir = dir_path.resolve()
+    if not is_path_allowed(resolved_dir):
         return UploadFileResponse(
             success=False,
-            error=f"Access denied: directory must be within home directory ({home_dir})",
+            error="Access denied: directory must be within allowed directories",
         )
 
     # Validate directory exists
@@ -387,13 +392,10 @@ async def check_path_type(path: str) -> PathTypeResponse:
 
     file_path = Path(path)
 
-    # Security: Restrict to user's home directory
-    home_dir = Path.home()
-    try:
-        resolved_path = file_path.resolve()
-        resolved_path.relative_to(home_dir)
-    except ValueError:
-        # Outside home directory - return not found
+    # Security: Restrict to allowed directories
+    resolved_path = file_path.resolve()
+    if not is_path_allowed(resolved_path):
+        # Outside allowed directories - return not found
         raise HTTPException(status_code=404)
 
     try:
@@ -459,10 +461,8 @@ async def resolve_path(path: str, session_id: str | None = None) -> PathResolveR
         logger.debug(f"Path resolution failed for {path}: {e}")
         raise HTTPException(status_code=404, detail="Path not found")
 
-    # Security: Restrict to user's home directory
-    try:
-        resolved.relative_to(home_dir)
-    except ValueError:
+    # Security: Restrict to allowed directories
+    if not is_path_allowed(resolved):
         raise HTTPException(status_code=404, detail="Path not found")
 
     # Check path exists
@@ -661,15 +661,12 @@ async def watch_file(path: str, request: Request, follow: bool = True) -> EventS
     """
     file_path = Path(path)
 
-    # Security: Restrict to user's home directory
-    home_dir = Path.home()
-    try:
-        resolved_path = file_path.resolve()
-        resolved_path.relative_to(home_dir)
-    except ValueError:
+    # Security: Restrict to allowed directories to prevent path traversal
+    resolved_path = file_path.resolve()
+    if not is_path_allowed(resolved_path):
         raise HTTPException(
             status_code=403,
-            detail=f"Access denied: path must be within home directory ({home_dir})",
+            detail="Access denied: path must be within allowed directories",
         )
 
     # Validate path exists and is a file

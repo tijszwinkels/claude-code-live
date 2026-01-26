@@ -650,12 +650,12 @@ This is a **bold** paragraph.
         # Try to access system files outside home directory
         response = client.get("/api/file?path=/etc/passwd")
         assert response.status_code == 403
-        assert "home directory" in response.json()["detail"]
+        assert "allowed directories" in response.json()["detail"]
 
         # Try with path traversal
         response = client.get("/api/file?path=/home/../etc/passwd")
         assert response.status_code == 403
-        assert "home directory" in response.json()["detail"]
+        assert "allowed directories" in response.json()["detail"]
 
     def test_get_file_markdown_html_escaped(self, home_tmp_path):
         """Test that raw HTML in markdown is escaped to prevent XSS."""
@@ -763,7 +763,7 @@ class TestFileRawAPI:
         response = client.get("/api/file/raw?path=/etc/passwd")
 
         assert response.status_code == 403
-        assert "home directory" in response.json()["detail"]
+        assert "allowed directories" in response.json()["detail"]
 
     def test_get_raw_file_unknown_extension(self, home_tmp_path):
         """Test unknown extension returns octet-stream."""
@@ -865,7 +865,7 @@ class TestFileWatchAPI:
         client = TestClient(app)
         response = client.get("/api/file/watch?path=/etc/passwd")
         assert response.status_code == 403
-        assert "home directory" in response.json()["detail"]
+        assert "allowed directories" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_file_watch_initial_content(self, home_tmp_path):
@@ -1453,7 +1453,7 @@ class TestFileDeleteAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is False
-        assert "home directory" in data["error"].lower()
+        assert "allowed directories" in data["error"].lower()
 
     def test_delete_path_traversal_blocked(self, home_tmp_path):
         """Test that path traversal attempts are blocked."""
@@ -1466,7 +1466,7 @@ class TestFileDeleteAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is False
-        assert "home directory" in data["error"].lower()
+        assert "allowed directories" in data["error"].lower()
 
 
 class TestFileDownloadEndpoint:
@@ -1613,7 +1613,7 @@ class TestFileUploadEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is False
-        assert "home directory" in data["error"].lower()
+        assert "allowed directories" in data["error"].lower()
 
     def test_upload_overwrites_existing_file(self, home_tmp_path):
         """Test that uploading overwrites an existing file."""
