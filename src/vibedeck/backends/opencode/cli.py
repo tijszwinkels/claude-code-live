@@ -15,6 +15,8 @@ import logging
 import shutil
 import subprocess
 
+from ..protocol import CommandSpec
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +52,7 @@ def build_send_command(
     session_id: str,
     message: str,
     skip_permissions: bool = False,
-) -> list[str]:
+) -> CommandSpec:
     """Build the CLI command to send a message to an existing session.
 
     Args:
@@ -59,18 +61,18 @@ def build_send_command(
         skip_permissions: Ignored for OpenCode (uses config file).
 
     Returns:
-        Command arguments list.
+        CommandSpec with args and message as stdin.
     """
-    # opencode run -s {session_id} "{message}"
-    cmd = [CLI_COMMAND, "run", "-s", session_id, message]
-    return cmd
+    # Use stdin for message to avoid issues with messages starting with '-'
+    cmd = [CLI_COMMAND, "run", "-s", session_id]
+    return CommandSpec(args=cmd, stdin=message)
 
 
 def build_fork_command(
     session_id: str,
     message: str,
     skip_permissions: bool = False,
-) -> list[str]:
+) -> CommandSpec:
     """Build the CLI command to fork a session.
 
     OpenCode does not support forking via CLI - it requires the SDK/server.
@@ -93,7 +95,7 @@ def build_new_session_command(
     message: str,
     skip_permissions: bool = False,
     model: str | None = None,
-) -> list[str]:
+) -> CommandSpec:
     """Build the CLI command to start a new session.
 
     Args:
@@ -102,14 +104,13 @@ def build_new_session_command(
         model: Model to use (e.g., "anthropic/claude-sonnet-4-5"). Optional.
 
     Returns:
-        Command arguments list.
+        CommandSpec with args and message as stdin.
     """
-    # opencode run [-m model] "{message}"
+    # Use stdin for message to avoid issues with messages starting with '-'
     cmd = [CLI_COMMAND, "run"]
     if model:
         cmd.extend(["-m", model])
-    cmd.append(message)
-    return cmd
+    return CommandSpec(args=cmd, stdin=message)
 
 
 def get_available_models() -> list[str]:

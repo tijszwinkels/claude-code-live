@@ -12,6 +12,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from ..protocol import (
+    CommandSpec,
     SessionMetadata,
     SessionTailerProtocol,
     MessageRendererProtocol,
@@ -222,7 +223,7 @@ class OpenCodeBackend:
         skip_permissions: bool = False,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to send a message.
 
         Args:
@@ -233,7 +234,7 @@ class OpenCodeBackend:
             add_dirs: Ignored for OpenCode.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         return build_send_command(session_id, message, skip_permissions)
 
@@ -244,7 +245,7 @@ class OpenCodeBackend:
         skip_permissions: bool = False,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to fork a session.
 
         OpenCode does not support forking via CLI.
@@ -261,7 +262,7 @@ class OpenCodeBackend:
         model: str | None = None,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to start a new session.
 
         Args:
@@ -272,7 +273,7 @@ class OpenCodeBackend:
             add_dirs: Ignored for OpenCode.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         return build_new_session_command(message, skip_permissions, model)
 

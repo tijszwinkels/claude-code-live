@@ -9,6 +9,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from ..protocol import CommandSpec
+
 
 CLI_COMMAND = "claude"
 CLI_INSTALL_INSTRUCTIONS = "Install with: npm install -g @anthropic-ai/claude-code"
@@ -42,7 +44,7 @@ def build_send_command(
     skip_permissions: bool = False,
     output_format: str | None = None,
     add_dirs: list[str] | None = None,
-) -> list[str]:
+) -> CommandSpec:
     """Build the CLI command to send a message to an existing session.
 
     Args:
@@ -53,9 +55,10 @@ def build_send_command(
         add_dirs: Additional directories to allow access to.
 
     Returns:
-        Command arguments list.
+        CommandSpec with args and message as stdin.
     """
-    cmd = [CLI_COMMAND, "-p", message, "--resume", session_id]
+    # Use stdin for message to avoid issues with messages starting with '-'
+    cmd = [CLI_COMMAND, "-p", "--resume", session_id]
     if add_dirs:
         for d in add_dirs:
             cmd.extend(["--add-dir", d])
@@ -64,7 +67,7 @@ def build_send_command(
         cmd.extend(["--output-format", output_format, "--verbose"])
     if skip_permissions:
         cmd.append("--dangerously-skip-permissions")
-    return cmd
+    return CommandSpec(args=cmd, stdin=message)
 
 
 def build_fork_command(
@@ -73,7 +76,7 @@ def build_fork_command(
     skip_permissions: bool = False,
     output_format: str | None = None,
     add_dirs: list[str] | None = None,
-) -> list[str]:
+) -> CommandSpec:
     """Build the CLI command to fork a session with conversation history.
 
     Args:
@@ -84,9 +87,10 @@ def build_fork_command(
         add_dirs: Additional directories to allow access to.
 
     Returns:
-        Command arguments list.
+        CommandSpec with args and message as stdin.
     """
-    cmd = [CLI_COMMAND, "-p", message, "--resume", session_id, "--fork-session"]
+    # Use stdin for message to avoid issues with messages starting with '-'
+    cmd = [CLI_COMMAND, "-p", "--resume", session_id, "--fork-session"]
     if add_dirs:
         for d in add_dirs:
             cmd.extend(["--add-dir", d])
@@ -95,7 +99,7 @@ def build_fork_command(
         cmd.extend(["--output-format", output_format, "--verbose"])
     if skip_permissions:
         cmd.append("--dangerously-skip-permissions")
-    return cmd
+    return CommandSpec(args=cmd, stdin=message)
 
 
 def build_new_session_command(
@@ -104,7 +108,7 @@ def build_new_session_command(
     model: str | None = None,
     output_format: str | None = None,
     add_dirs: list[str] | None = None,
-) -> list[str]:
+) -> CommandSpec:
     """Build the CLI command to start a new session.
 
     Args:
@@ -115,9 +119,10 @@ def build_new_session_command(
         add_dirs: Additional directories to allow access to.
 
     Returns:
-        Command arguments list.
+        CommandSpec with args and message as stdin.
     """
-    cmd = [CLI_COMMAND, "-p", message]
+    # Use stdin for message to avoid issues with messages starting with '-'
+    cmd = [CLI_COMMAND, "-p"]
     if add_dirs:
         for d in add_dirs:
             cmd.extend(["--add-dir", d])
@@ -128,4 +133,4 @@ def build_new_session_command(
         cmd.extend(["--output-format", output_format, "--verbose"])
     if skip_permissions:
         cmd.append("--dangerously-skip-permissions")
-    return cmd
+    return CommandSpec(args=cmd, stdin=message)

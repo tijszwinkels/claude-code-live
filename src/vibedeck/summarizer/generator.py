@@ -108,18 +108,19 @@ class Summarizer:
 
         # Build resume command with --no-session-persistence
         # This reads the session for context but doesn't write anything back
-        cmd = self.backend.build_send_command(
+        cmd_spec = self.backend.build_send_command(
             session_id=session.session_id,
             message=prompt,
             skip_permissions=True,
         )
-        cmd.extend(["--no-session-persistence", "--output-format", "json"])
+        # Add extra flags to the command args
+        cmd_args = cmd_spec.args + ["--no-session-persistence", "--output-format", "json"]
 
         # Add model flag if specified
         if model:
-            cmd.extend(["--model", model])
+            cmd_args.extend(["--model", model])
 
-        logger.debug(f"Running summary command: {' '.join(cmd)}")
+        logger.debug(f"Running summary command: {' '.join(cmd_args)}")
 
         try:
             # Run from the project directory
@@ -132,13 +133,24 @@ class Summarizer:
                 env = {**os.environ, "MAX_THINKING_TOKENS": str(self.thinking_budget)}
                 logger.debug(f"Using thinking budget: {self.thinking_budget}")
 
+            # Use PIPE for stdin if we need to pass message content
+            stdin_pipe = asyncio.subprocess.PIPE if cmd_spec.stdin else asyncio.subprocess.DEVNULL
+
             process = await asyncio.create_subprocess_exec(
-                *cmd,
+                *cmd_args,
+                stdin=stdin_pipe,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
                 env=env,
             )
+
+            # Write message to stdin if provided
+            if cmd_spec.stdin:
+                process.stdin.write(cmd_spec.stdin.encode())
+                await process.stdin.drain()
+                process.stdin.close()
+                await process.stdin.wait_closed()
 
             try:
                 stdout, stderr = await asyncio.wait_for(

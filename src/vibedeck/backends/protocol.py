@@ -13,6 +13,21 @@ from typing import Protocol, Callable, Any, runtime_checkable
 
 
 @dataclass
+class CommandSpec:
+    """Specification for a CLI command with optional stdin input.
+
+    Using stdin for message content avoids issues with messages that start
+    with '-' being interpreted as command-line options.
+    """
+
+    args: list[str]
+    """Command arguments to pass to subprocess."""
+
+    stdin: str | None = None
+    """Content to pass via stdin (e.g., the message text)."""
+
+
+@dataclass
 class SessionMetadata:
     """Metadata about a coding session."""
 
@@ -312,7 +327,7 @@ class CodingToolBackend(Protocol):
         skip_permissions: bool = False,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to send a message.
 
         Args:
@@ -323,7 +338,7 @@ class CodingToolBackend(Protocol):
             add_dirs: Additional directories to allow access to.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         ...
 
@@ -334,7 +349,7 @@ class CodingToolBackend(Protocol):
         skip_permissions: bool = False,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to fork a session.
 
         Args:
@@ -345,7 +360,7 @@ class CodingToolBackend(Protocol):
             add_dirs: Additional directories to allow access to.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         ...
 
@@ -355,7 +370,7 @@ class CodingToolBackend(Protocol):
         skip_permissions: bool = False,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to start a new session.
 
         Args:
@@ -365,7 +380,7 @@ class CodingToolBackend(Protocol):
             add_dirs: Additional directories to allow access to.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         ...
 

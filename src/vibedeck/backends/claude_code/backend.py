@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ..protocol import (
     CodingToolBackend,
+    CommandSpec,
     SessionMetadata,
     SessionTailerProtocol,
     MessageRendererProtocol,
@@ -229,7 +230,7 @@ class ClaudeCodeBackend:
         skip_permissions: bool = False,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to send a message.
 
         Args:
@@ -240,7 +241,7 @@ class ClaudeCodeBackend:
             add_dirs: Additional directories to allow access to.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         return build_send_command(session_id, message, skip_permissions, output_format, add_dirs)
 
@@ -251,7 +252,7 @@ class ClaudeCodeBackend:
         skip_permissions: bool = False,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to fork a session.
 
         Args:
@@ -262,7 +263,7 @@ class ClaudeCodeBackend:
             add_dirs: Additional directories to allow access to.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         return build_fork_command(session_id, message, skip_permissions, output_format, add_dirs)
 
@@ -273,7 +274,7 @@ class ClaudeCodeBackend:
         model: str | None = None,
         output_format: str | None = None,
         add_dirs: list[str] | None = None,
-    ) -> list[str]:
+    ) -> CommandSpec:
         """Build the CLI command to start a new session.
 
         Args:
@@ -284,7 +285,7 @@ class ClaudeCodeBackend:
             add_dirs: Additional directories to allow access to.
 
         Returns:
-            Command arguments list.
+            CommandSpec with args and stdin content.
         """
         return build_new_session_command(message, skip_permissions, model=model, output_format=output_format, add_dirs=add_dirs)
 

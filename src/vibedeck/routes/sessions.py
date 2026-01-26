@@ -544,9 +544,9 @@ async def create_new_session(request: NewSessionRequest) -> dict:
     add_dirs = _server_state["get_allowed_directories"]() or None
 
     if model:
-        cmd_args = build_cmd(message, skip_permissions, model=model, output_format=output_format, add_dirs=add_dirs)
+        cmd_spec = build_cmd(message, skip_permissions, model=model, output_format=output_format, add_dirs=add_dirs)
     else:
-        cmd_args = build_cmd(message, skip_permissions, output_format=output_format, add_dirs=add_dirs)
+        cmd_spec = build_cmd(message, skip_permissions, output_format=output_format, add_dirs=add_dirs)
 
     # Import here to access pending processes dict
     from ..server import _pending_new_session_processes
@@ -554,15 +554,24 @@ async def create_new_session(request: NewSessionRequest) -> dict:
     try:
         # Capture stdout if using permission detection
         stdout_pipe = asyncio.subprocess.PIPE if use_permission_detection else asyncio.subprocess.DEVNULL
+        # Use PIPE for stdin if we need to pass message content
+        stdin_pipe = asyncio.subprocess.PIPE if cmd_spec.stdin else asyncio.subprocess.DEVNULL
 
         # Start CLI in the working directory
         proc = await asyncio.create_subprocess_exec(
-            *cmd_args,
+            *cmd_spec.args,
             cwd=cwd,
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=stdin_pipe,
             stdout=stdout_pipe,
             stderr=asyncio.subprocess.PIPE,
         )
+
+        # Write message to stdin if provided
+        if cmd_spec.stdin:
+            proc.stdin.write(cmd_spec.stdin.encode())
+            await proc.stdin.drain()
+            proc.stdin.close()
+            await proc.stdin.wait_closed()
 
         # Store process reference and cwd for permission handling
         cwd_key = str(cwd.resolve()) if cwd else ""

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .protocol import (
         CodingToolBackend,
+        CommandSpec,
         MessageRendererProtocol,
         SessionMetadata,
         SessionTailerProtocol,
@@ -280,7 +281,7 @@ class MultiBackend:
         session_id: str,
         message: str,
         skip_permissions: bool = False,
-    ) -> list[str]:
+    ) -> "CommandSpec":
         """Build the CLI command to send a message.
 
         Raises:
@@ -297,7 +298,7 @@ class MultiBackend:
         session_id: str,
         message: str,
         skip_permissions: bool = False,
-    ) -> list[str]:
+    ) -> "CommandSpec":
         """Build the CLI command to fork a session."""
         raise NotImplementedError(
             "MultiBackend cannot build fork commands. "
@@ -308,7 +309,7 @@ class MultiBackend:
         self,
         message: str,
         skip_permissions: bool = False,
-    ) -> list[str]:
+    ) -> "CommandSpec":
         """Build the CLI command to start a new session.
 
         For multi-backend, defaults to first backend with CLI available.

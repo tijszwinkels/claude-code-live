@@ -301,8 +301,13 @@ class TestSummarizer:
     @pytest.fixture
     def mock_backend(self):
         """Create a mock backend."""
+        from vibedeck.backends.protocol import CommandSpec
+
         backend = MagicMock()
-        backend.build_send_command.return_value = ["claude", "-p", "test"]
+        backend.build_send_command.return_value = CommandSpec(
+            args=["claude", "-p", "--resume", "test"],
+            stdin="test message",
+        )
         return backend
 
     @pytest.fixture

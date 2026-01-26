@@ -535,35 +535,37 @@ class TestOpenCodeBackend:
         from vibedeck.backends.opencode import OpenCodeBackend
 
         backend = OpenCodeBackend(storage_dir=opencode_storage_dir)
-        cmd = backend.build_send_command("ses_123", "hello world")
+        cmd_spec = backend.build_send_command("ses_123", "hello world")
 
-        assert cmd == ["opencode", "run", "-s", "ses_123", "hello world"]
+        assert cmd_spec.args == ["opencode", "run", "-s", "ses_123"]
+        assert cmd_spec.stdin == "hello world"
 
     def test_build_new_session_command(self, opencode_storage_dir):
         """Test building new session command."""
         from vibedeck.backends.opencode import OpenCodeBackend
 
         backend = OpenCodeBackend(storage_dir=opencode_storage_dir)
-        cmd = backend.build_new_session_command("start message")
+        cmd_spec = backend.build_new_session_command("start message")
 
-        assert cmd == ["opencode", "run", "start message"]
+        assert cmd_spec.args == ["opencode", "run"]
+        assert cmd_spec.stdin == "start message"
 
     def test_build_new_session_command_with_model(self, opencode_storage_dir):
         """Test building new session command with model parameter."""
         from vibedeck.backends.opencode import OpenCodeBackend
 
         backend = OpenCodeBackend(storage_dir=opencode_storage_dir)
-        cmd = backend.build_new_session_command(
+        cmd_spec = backend.build_new_session_command(
             "start message", model="anthropic/claude-sonnet-4-5"
         )
 
-        assert cmd == [
+        assert cmd_spec.args == [
             "opencode",
             "run",
             "-m",
             "anthropic/claude-sonnet-4-5",
-            "start message",
         ]
+        assert cmd_spec.stdin == "start message"
 
     def test_get_session_metadata(self, opencode_session):
         """Test getting session metadata."""
@@ -618,8 +620,9 @@ class TestOpenCodeCLI:
             build_send_command,
         )
 
-        cmd = build_send_command("ses_abc", "test message")
-        assert cmd == ["opencode", "run", "-s", "ses_abc", "test message"]
+        cmd_spec = build_send_command("ses_abc", "test message")
+        assert cmd_spec.args == ["opencode", "run", "-s", "ses_abc"]
+        assert cmd_spec.stdin == "test message"
 
     def test_build_new_session_command(self):
         """Test building new session command."""
@@ -627,8 +630,9 @@ class TestOpenCodeCLI:
             build_new_session_command,
         )
 
-        cmd = build_new_session_command("initial prompt")
-        assert cmd == ["opencode", "run", "initial prompt"]
+        cmd_spec = build_new_session_command("initial prompt")
+        assert cmd_spec.args == ["opencode", "run"]
+        assert cmd_spec.stdin == "initial prompt"
 
     def test_build_fork_command_raises(self):
         """Test that fork command raises NotImplementedError."""

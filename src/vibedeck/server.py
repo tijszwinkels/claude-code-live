@@ -563,11 +563,11 @@ async def run_cli_for_session(
         add_dirs = get_allowed_directories() or None
 
         if fork:
-            cmd_args = backend.build_fork_command(
+            cmd_spec = backend.build_fork_command(
                 session_id, message, _skip_permissions, output_format, add_dirs
             )
         else:
-            cmd_args = backend.build_send_command(
+            cmd_spec = backend.build_send_command(
                 session_id, message, _skip_permissions, output_format, add_dirs
             )
 
@@ -606,15 +606,24 @@ async def run_cli_for_session(
 
         # Capture stdout if using permission detection
         stdout_pipe = asyncio.subprocess.PIPE if use_permission_detection else asyncio.subprocess.DEVNULL
+        # Use PIPE for stdin if we need to pass message content
+        stdin_pipe = asyncio.subprocess.PIPE if cmd_spec.stdin else asyncio.subprocess.DEVNULL
 
         proc = await asyncio.create_subprocess_exec(
-            *cmd_args,
+            *cmd_spec.args,
             cwd=cwd,
             env=env,
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=stdin_pipe,
             stdout=stdout_pipe,
             stderr=asyncio.subprocess.PIPE,
         )
+
+        # Write message to stdin if provided
+        if cmd_spec.stdin:
+            proc.stdin.write(cmd_spec.stdin.encode())
+            await proc.stdin.drain()
+            proc.stdin.close()
+            await proc.stdin.wait_closed()
 
         # Only track process on the original session if not forking
         # (forked session will create its own session file and be picked up by file watcher)
