@@ -242,17 +242,38 @@ export function createSession(sessionId, name, projectName, firstMessage, starte
         <span class="close-btn" title="Close">&times;</span>
     `;
 
+    // Get close button for use below
+    const closeBtn = sidebarItem.querySelector('.close-btn');
+
     // Apply status color based on title suffix (e.g., "- Merged", "- Waiting for Input")
     updateSidebarItemStatusClass(sidebarItem, summaryTitle, sessionId);
 
     sidebarItem.addEventListener('click', function(e) {
         if (e.target.classList.contains('close-btn')) {
-            archiveSession(sessionId);
+            const session = state.sessions.get(sessionId);
+            if (session && session.archived) {
+                // Check if archived via project or individually
+                if (session.cwd && state.archivedProjectPaths.has(session.cwd)) {
+                    // Archived via project - unarchive project but keep other sessions archived
+                    unarchiveProjectButKeepOthersArchived(session.cwd, sessionId);
+                } else {
+                    // Individually archived - just unarchive this session
+                    unarchiveSession(sessionId);
+                }
+            } else {
+                archiveSession(sessionId);
+            }
         } else if (e.target.classList.contains('new-in-folder-btn')) {
             // Create new session in same folder (same as project header "+" button)
             const cwd = sidebarItem.dataset.cwd;
             createPendingSession(cwd || null, projectName);
         } else {
+            // Check if this session is in an archived project
+            const session = state.sessions.get(sessionId);
+            if (session && session.cwd && state.archivedProjectPaths.has(session.cwd)) {
+                // Unarchive project but archive other sessions in it
+                unarchiveProjectButKeepOthersArchived(session.cwd, sessionId);
+            }
             switchToSession(sessionId, true);  // Scroll to bottom when opening
             // Close sidebar on mobile
             if (isMobile()) {
@@ -293,6 +314,7 @@ export function createSession(sessionId, name, projectName, firstMessage, starte
                        (projectPath && state.archivedProjectPaths.has(projectPath));
     if (isArchived) {
         sidebarItem.classList.add('archived');
+        closeBtn.title = 'Unarchive';
     }
 
     const session = {
@@ -381,6 +403,7 @@ export async function archiveSession(sessionId) {
     // Mark session as archived and reorder sidebar
     session.archived = true;
     session.sidebarItem.classList.add('archived');
+    updateCloseBtnTitleForSession(sessionId);
     reorderSidebar();
 
     // If this was the active session, switch to another
@@ -411,6 +434,7 @@ export async function archiveSession(sessionId) {
         state.archivedSessionIds.delete(sessionId);
         session.archived = false;
         session.sidebarItem.classList.remove('archived');
+        updateCloseBtnTitleForSession(sessionId);
         reorderSidebar();
         if (wasActive) {
             switchToSession(sessionId);
@@ -428,6 +452,7 @@ export async function unarchiveSession(sessionId) {
     // Mark session as not archived and reorder sidebar
     session.archived = false;
     session.sidebarItem.classList.remove('archived');
+    updateCloseBtnTitleForSession(sessionId);
     reorderSidebar();
 
     // Persist to server - rollback on failure
@@ -446,6 +471,7 @@ export async function unarchiveSession(sessionId) {
         state.archivedSessionIds.add(sessionId);
         session.archived = true;
         session.sidebarItem.classList.add('archived');
+        updateCloseBtnTitleForSession(sessionId);
         reorderSidebar();
     }
 }
@@ -463,6 +489,7 @@ export async function loadArchivedSessions() {
             if (session) {
                 session.archived = true;
                 session.sidebarItem.classList.add('archived');
+                updateCloseBtnTitleForSession(sessionId);
             }
         }
     } catch (err) {
@@ -553,6 +580,7 @@ export async function loadArchivedProjects() {
             if (isSessionInArchivedProject(session)) {
                 session.archived = true;
                 session.sidebarItem.classList.add('archived');
+                updateCloseBtnTitleForSession(sessionId);
             }
         }
     } catch (err) {
@@ -583,6 +611,7 @@ export async function archiveProject(projectPath) {
             affectedSessions.push({ sessionId, wasArchived: session.archived });
             session.archived = true;
             session.sidebarItem.classList.add('archived');
+            updateCloseBtnTitleForSession(sessionId);
         }
     }
     reorderSidebar();
@@ -611,6 +640,7 @@ export async function archiveProject(projectPath) {
                 if (!wasArchived) {
                     session.sidebarItem.classList.remove('archived');
                 }
+                updateCloseBtnTitleForSession(sessionId);
             }
         }
         reorderSidebar();
@@ -635,6 +665,7 @@ export async function unarchiveProject(projectPath) {
             affectedSessions.push({ sessionId, wasArchived: session.archived });
             session.archived = false;
             session.sidebarItem.classList.remove('archived');
+            updateCloseBtnTitleForSession(sessionId);
         }
     }
     reorderSidebar();
@@ -661,9 +692,96 @@ export async function unarchiveProject(projectPath) {
                 if (wasArchived) {
                     session.sidebarItem.classList.add('archived');
                 }
+                updateCloseBtnTitleForSession(sessionId);
             }
         }
         reorderSidebar();
+    }
+}
+
+// Unarchive a project but keep other sessions in it archived individually
+// This is used when clicking on a session from an archived project
+export async function unarchiveProjectButKeepOthersArchived(projectPath, clickedSessionId) {
+    if (!projectPath) return;
+
+    // Only proceed if project is actually archived
+    if (!state.archivedProjectPaths.has(projectPath)) return;
+
+    // Find all sessions in this project
+    const sessionsInProject = [];
+    for (const [sessionId, session] of state.sessions) {
+        if (session.cwd === projectPath) {
+            sessionsInProject.push(sessionId);
+        }
+    }
+
+    // Archive all other sessions in the project individually (except the clicked one)
+    const sessionsToArchive = sessionsInProject.filter(id => id !== clickedSessionId);
+
+    // First, archive all other sessions individually
+    for (const sessionId of sessionsToArchive) {
+        if (!state.archivedSessionIds.has(sessionId)) {
+            state.archivedSessionIds.add(sessionId);
+            const session = state.sessions.get(sessionId);
+            if (session) {
+                session.archived = true;
+                session.sidebarItem.classList.add('archived');
+                updateCloseBtnTitleForSession(sessionId);
+            }
+        }
+    }
+
+    // Persist the session archives to server
+    for (const sessionId of sessionsToArchive) {
+        try {
+            await fetch('/api/archived-sessions/archive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId })
+            });
+        } catch (err) {
+            console.error('Failed to archive session:', sessionId, err);
+        }
+    }
+
+    // Now unarchive the project
+    state.archivedProjectPaths.delete(projectPath);
+
+    // Unarchive the clicked session
+    const clickedSession = state.sessions.get(clickedSessionId);
+    if (clickedSession) {
+        clickedSession.archived = false;
+        clickedSession.sidebarItem.classList.remove('archived');
+        updateCloseBtnTitleForSession(clickedSessionId);
+    }
+
+    reorderSidebar();
+
+    // Persist project unarchive to server
+    try {
+        const response = await fetch('/api/archived-projects/unarchive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_path: projectPath })
+        });
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+    } catch (err) {
+        console.error('Failed to unarchive project:', err);
+        // Note: We don't fully rollback here as the session archives are already persisted
+        // This is a best-effort operation
+    }
+}
+
+// Helper function to update close button title for a session
+function updateCloseBtnTitleForSession(sessionId) {
+    const session = state.sessions.get(sessionId);
+    if (!session) return;
+
+    const closeBtn = session.sidebarItem.querySelector('.close-btn');
+    if (closeBtn) {
+        closeBtn.title = session.archived ? 'Unarchive' : 'Close';
     }
 }
 
