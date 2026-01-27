@@ -16,6 +16,7 @@ import { closePreviewPane, openPreviewPane } from './preview.js';
 import { loadFileTree, setProjectRoot } from './filetree.js';
 import { showProjectContextMenu, showSessionContextMenu } from './sidebar-context-menu.js';
 import { extractArtifactsFromElement, onSessionChanged } from './artifacts.js';
+import { parseAndExecuteCommands } from './commands.js';
 
 // Forward declarations for circular dependency - will be set by other modules
 let updateInputBarUI = () => {};
@@ -967,7 +968,8 @@ export async function loadSessionMessages(sessionId) {
         // Insert messages after the session header
         if (data.html) {
             const temp = document.createElement('div');
-            temp.innerHTML = data.html;
+            // Process vibedeck commands to add execute buttons (isLiveStreaming=false to skip auto-execute)
+            temp.innerHTML = parseAndExecuteCommands(data.html, sessionId, false);
 
             // Process each message element
             while (temp.firstElementChild) {
