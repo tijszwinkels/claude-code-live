@@ -223,8 +223,12 @@ export async function openDiffView(selectFilePath = null, preferredType = null) 
 
 /**
  * Close diff view and return to file tree mode.
+ * @returns {string|null} The cwd that was being used (for navigating back to the right directory)
  */
 export function closeDiffView() {
+    // Save cwd before clearing so caller can navigate to the right directory
+    const cwd = state.diffCwd;
+
     state.diffModeActive = false;
     state.diffFiles = [];
     state.diffType = null;
@@ -250,6 +254,8 @@ export function closeDiffView() {
             </div>
         `;
     }
+
+    return cwd;
 }
 
 /**
@@ -281,9 +287,9 @@ function renderDiffFileList() {
     closeBtn.title = 'Close diff view';
     closeBtn.innerHTML = '&times;';
     closeBtn.addEventListener('click', () => {
-        closeDiffView();
-        // Reload file tree
-        import('./filetree.js').then(m => m.loadFileTree(state.activeSessionId));
+        const cwd = closeDiffView();
+        // Reload file tree at the worktree/directory we were viewing
+        import('./filetree.js').then(m => m.loadFileTree(state.activeSessionId, cwd));
     });
     header.appendChild(closeBtn);
 
@@ -555,8 +561,9 @@ function renderNoGitMessage() {
     closeBtn.title = 'Close';
     closeBtn.innerHTML = '&times;';
     closeBtn.addEventListener('click', () => {
-        closeDiffView();
-        import('./filetree.js').then(m => m.loadFileTree(state.activeSessionId));
+        const cwd = closeDiffView();
+        // Reload file tree at the directory we were viewing
+        import('./filetree.js').then(m => m.loadFileTree(state.activeSessionId, cwd));
     });
     header.appendChild(closeBtn);
 
