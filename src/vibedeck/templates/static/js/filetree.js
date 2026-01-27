@@ -728,7 +728,8 @@ function renderGitFooter() {
         uncommittedBtn.innerHTML = `<span class="git-icon">●</span> Uncommitted changes <span class="git-count">${gitStatus.uncommitted.count}</span>`;
         uncommittedBtn.title = `${gitStatus.uncommitted.count} file${gitStatus.uncommitted.count !== 1 ? 's' : ''} with uncommitted changes`;
         uncommittedBtn.addEventListener('click', () => {
-            openDiffView();  // Opens with uncommitted as primary (default behavior)
+            // Pass currentPath so diff view uses the right directory (for worktrees)
+            openDiffView(currentPath, 'uncommitted');
         });
         footer.appendChild(uncommittedBtn);
     }
@@ -740,8 +741,8 @@ function renderGitFooter() {
         branchBtn.innerHTML = `<span class="git-icon">⎇</span> ${escapeHtml(gitStatus.branch.name)} vs ${escapeHtml(gitStatus.branch.mainBranch)} <span class="git-count">${gitStatus.branch.count}</span>`;
         branchBtn.title = `${gitStatus.branch.count} file${gitStatus.branch.count !== 1 ? 's' : ''} changed vs ${gitStatus.branch.mainBranch}`;
         branchBtn.addEventListener('click', () => {
-            // Open diff view showing branch changes
-            openDiffView(null, 'vs_main');
+            // Pass currentPath so diff view uses the right directory (for worktrees)
+            openDiffView(currentPath, 'vs_main');
         });
         footer.appendChild(branchBtn);
     }
