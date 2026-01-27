@@ -1283,6 +1283,12 @@ export function appendMessage(sessionId, html) {
 
     const isActiveSession = sessionId === state.activeSessionId;
 
+    // If session is currently loading messages via REST, ignore SSE messages
+    // to avoid duplicates (the REST call will return all messages)
+    if (session.loading) {
+        return;
+    }
+
     // If session not loaded yet, just track unread and update sidebar
     // (message will be fetched when session is viewed)
     if (!session.loaded && !isActiveSession) {
