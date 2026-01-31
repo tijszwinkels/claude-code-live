@@ -5,7 +5,7 @@ On every commit, publish a gist of the conversation transcript and add the previ
 Generate a short, unique verification phrase in the conversation, then run:
 
 ```bash
-uvx --from git+https://github.com/tijszwinkels/vibedeck vibedeck html --phrase "YOUR_PHRASE" --gist
+uvx vibedeck html --phrase "YOUR_PHRASE" --gist
 ```
 
 This searches sessions from today and yesterday and exports if exactly one match is found.

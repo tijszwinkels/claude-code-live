@@ -38,13 +38,19 @@ I got inspired by Simon Willison's [claude-code-transcripts](https://simonwillis
 ## Installation
 
 ```bash
-uv tool install git+https://github.com/tijszwinkels/vibedeck
+uv tool install vibedeck
 ```
 
 Or run directly:
 
 ```bash
-uvx git+https://github.com/tijszwinkels/vibedeck
+uvx vibedeck
+```
+
+### Install from Git (latest main)
+
+```bash
+uv tool install git+https://github.com/tijszwinkels/vibedeck
 ```
 
 ## Usage
