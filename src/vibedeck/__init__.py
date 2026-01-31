@@ -10,10 +10,20 @@ from click_default_group import DefaultGroup
 import uvicorn
 
 from .backends import list_backends, get_multi_backend
+from .config import load_config
 
 __version__ = "0.1.0"
 
 logger = logging.getLogger(__name__)
+
+# Load config once at startup
+_config = load_config()
+
+
+def _get_serve_default(key: str, fallback):
+    """Get a default value from config, with fallback."""
+    value = getattr(_config.serve, key, None)
+    return value if value is not None else fallback
 
 
 @click.group(cls=DefaultGroup, default="serve", default_if_no_args=True)
@@ -29,6 +39,13 @@ def main() -> None:
 
 @main.command()
 @click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True, path_type=Path),
+    help="Load configuration from a specific TOML file",
+)
+@click.option(
     "--session",
     "-s",
     type=click.Path(exists=True, path_type=Path),
@@ -38,51 +55,56 @@ def main() -> None:
     "--port",
     "-p",
     type=int,
-    default=8765,
-    help="Port to run the server on (default: 8765)",
+    default=None,
+    help=f"Port to run the server on (default: {_config.serve.port})",
 )
 @click.option(
     "--host",
     type=str,
-    default="127.0.0.1",
-    help="Host to bind to (default: 127.0.0.1)",
+    default=None,
+    help=f"Host to bind to (default: {_config.serve.host})",
 )
 @click.option(
     "--no-open",
     is_flag=True,
+    default=None,
     help="Don't open browser automatically",
 )
 @click.option(
     "--debug",
     is_flag=True,
+    default=None,
     help="Enable debug logging",
 )
 @click.option(
     "--max-sessions",
     type=int,
-    default=100,
-    help="Maximum number of sessions to track (default: 100)",
+    default=None,
+    help=f"Maximum number of sessions to track (default: {_config.serve.max_sessions})",
 )
 @click.option(
     "--backend",
     type=click.Choice(["all"] + list_backends()),
-    default="all",
-    help="Backend to use: 'all' for all backends (default), or a specific backend name",
+    default=None,
+    help=f"Backend to use (default: {_config.serve.backend})",
 )
 @click.option(
     "--disable-send",
     is_flag=True,
+    default=None,
     help="Disable sending messages to Claude Code sessions (enabled by default)",
 )
 @click.option(
     "--dangerously-skip-permissions",
     is_flag=True,
+    default=None,
     hidden=True,
     help="Pass --dangerously-skip-permissions to Claude CLI",
 )
 @click.option(
     "--fork",
     is_flag=True,
+    default=None,
     help="Enable fork button to create new sessions from messages",
 )
 @click.option(
@@ -94,11 +116,13 @@ def main() -> None:
 @click.option(
     "--include-subagents",
     is_flag=True,
+    default=None,
     help="Include subagent sessions in the session list",
 )
 @click.option(
     "--enable-thinking",
     is_flag=True,
+    default=None,
     hidden=True,
     help="Enable thinking level detection (set MAX_THINKING_TOKENS based on keywords)",
 )
@@ -124,8 +148,8 @@ def main() -> None:
 @click.option(
     "--idle-summary-model",
     type=str,
-    default="haiku",
-    help="Model to use for idle summarization (default: haiku)",
+    default=None,
+    help=f"Model to use for idle summarization (default: {_config.serve.idle_summary_model})",
 )
 @click.option(
     "--summary-after-long-running",
@@ -148,23 +172,24 @@ def main() -> None:
     help="Path to file containing custom prompt template",
 )
 def serve(
+    config_file: Path | None,
     session: Path | None,
-    port: int,
-    host: str,
-    no_open: bool,
-    debug: bool,
-    max_sessions: int,
-    backend: str,
-    disable_send: bool,
-    dangerously_skip_permissions: bool,
-    fork: bool,
+    port: int | None,
+    host: str | None,
+    no_open: bool | None,
+    debug: bool | None,
+    max_sessions: int | None,
+    backend: str | None,
+    disable_send: bool | None,
+    dangerously_skip_permissions: bool | None,
+    fork: bool | None,
     default_send_backend: str | None,
-    include_subagents: bool,
-    enable_thinking: bool,
+    include_subagents: bool | None,
+    enable_thinking: bool | None,
     thinking_budget: int | None,
     summary_log: Path | None,
     summarize_after_idle_for: int | None,
-    idle_summary_model: str,
+    idle_summary_model: str | None,
     summary_after_long_running: int | None,
     summary_prompt: str | None,
     summary_prompt_file: Path | None,
@@ -177,6 +202,35 @@ def serve(
     By default, discovers and watches the most recent sessions in
     ~/.claude/projects/. Use --session to add a specific session file.
     """
+    # Load config from explicit file or use auto-loaded config
+    if config_file:
+        config = load_config([config_file])
+        cfg = config.serve
+    else:
+        cfg = _config.serve
+    port = port if port is not None else cfg.port
+    host = host if host is not None else cfg.host
+    no_open = no_open if no_open is not None else cfg.no_open
+    debug = debug if debug is not None else cfg.debug
+    max_sessions = max_sessions if max_sessions is not None else cfg.max_sessions
+    backend = backend if backend is not None else cfg.backend
+    disable_send = disable_send if disable_send is not None else cfg.disable_send
+    dangerously_skip_permissions = dangerously_skip_permissions if dangerously_skip_permissions is not None else cfg.dangerously_skip_permissions
+    fork = fork if fork is not None else cfg.fork
+    default_send_backend = default_send_backend if default_send_backend is not None else cfg.default_send_backend
+    include_subagents = include_subagents if include_subagents is not None else cfg.include_subagents
+    enable_thinking = enable_thinking if enable_thinking is not None else cfg.enable_thinking
+    thinking_budget = thinking_budget if thinking_budget is not None else cfg.thinking_budget
+    idle_summary_model = idle_summary_model if idle_summary_model is not None else cfg.idle_summary_model
+    summarize_after_idle_for = summarize_after_idle_for if summarize_after_idle_for is not None else cfg.summarize_after_idle_for
+    summary_after_long_running = summary_after_long_running if summary_after_long_running is not None else cfg.summary_after_long_running
+    summary_prompt = summary_prompt if summary_prompt is not None else cfg.summary_prompt
+    # Handle summary_log and summary_prompt_file (need Path conversion from config string)
+    if summary_log is None and cfg.summary_log:
+        summary_log = Path(cfg.summary_log).expanduser()
+    if summary_prompt_file is None and cfg.summary_prompt_file:
+        summary_prompt_file = Path(cfg.summary_prompt_file).expanduser()
+
     # Configure logging
     log_level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(

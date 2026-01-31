@@ -1,11 +1,11 @@
 # VibeDeck Configuration
 #
-# Copy this file to one of these locations:
-#   ~/.config/vibedeck/config.toml  (global)
-#   .vibedeck.toml                  (project-local)
+# Config files are automatically loaded from these locations (in priority order):
+#   1. ~/.config/vibedeck/config.toml  (global user config)
+#   2. .vibedeck.toml                  (project-local)
+#   3. config.toml                     (project-local, alternative name)
 #
-# CLI arguments override config file values.
-# Run `vibedeck config` to see effective configuration.
+# Later files override earlier ones. CLI arguments override all config values.
 
 [serve]
 # port = 8765                    # Server port

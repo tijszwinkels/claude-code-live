@@ -157,6 +157,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 
+def get_config_paths() -> list[Path]:
+    """Get list of config file paths to check, in priority order.
+
+    Lower priority files are listed first so they get overridden by later ones.
+
+    Checks:
+    1. ~/.config/vibedeck/config.toml (global user config)
+    2. .vibedeck.toml (project-local config)
+    3. config.toml (project-local config, alternative name)
+
+    Returns:
+        List of paths to check (may not all exist).
+    """
+    paths = []
+
+    # Global user config
+    global_config = Path.home() / ".config" / "vibedeck" / "config.toml"
+    paths.append(global_config)
+
+    # Project-local configs (higher priority)
+    paths.append(Path(".vibedeck.toml"))
+    paths.append(Path("config.toml"))
+
+    return paths
+
+
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Deep merge two dictionaries.
 

@@ -103,17 +103,19 @@ vibedeck md ses_xxx -o transcript.md
 
 ## Configuration
 
-CLI options can be set in a TOML config file. Use `--config` to load a config file:
+CLI options can be set in a TOML config file. Config files are automatically loaded from the following locations (in order of priority, later files override earlier ones):
+
+1. `~/.config/vibedeck/config.toml` - global user config
+2. `.vibedeck.toml` - project-local config
+3. `config.toml` - project-local config (alternative name)
+
+You can also specify a config file explicitly:
 
 ```bash
-# Load config and start server
-vibedeck --config config.toml
-
-# Show effective configuration
-vibedeck --config config.toml config
+vibedeck --config myconfig.toml
 ```
 
-CLI arguments override config file values. See `config.example.toml` for all options.
+CLI arguments always override config file values. See `config.example.toml` for all options.
 
 Example config:
 
@@ -123,10 +125,10 @@ port = 9000
 host = "0.0.0.0"
 no_open = true
 max_sessions = 50
-
-[html]
-gist = true
-repo = "owner/repo"
+fork = true
+dangerously_skip_permissions = true
+summary_log = "~/logs/session-summaries.jsonl"
+summary_after_long_running = 180
 ```
 
 ## Development
