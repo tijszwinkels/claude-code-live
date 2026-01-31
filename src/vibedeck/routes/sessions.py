@@ -152,6 +152,11 @@ async def send_message(session_id: str, request: SendMessageRequest) -> dict:
     if info is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Validate input first (before checking CLI availability)
+    message = request.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
     # Get the specific backend for this session
     backend = _server_state["get_backend_for_session"](info.path)
 
@@ -161,10 +166,6 @@ async def send_message(session_id: str, request: SendMessageRequest) -> dict:
             status_code=503,
             detail=f"CLI not found. {backend.get_cli_install_instructions()}",
         )
-
-    message = request.message.strip()
-    if not message:
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     # If a process is already running, queue the message
     if info.process is not None:
@@ -516,16 +517,36 @@ async def create_new_session(request: NewSessionRequest) -> dict:
                     detail=f"Unknown backend: {requested_backend}",
                 )
 
+    # Validate input first (before checking CLI availability)
+    message = request.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    # Validate model_index if provided (doesn't require CLI)
+    build_cmd = target_backend.build_new_session_command
+    sig = inspect.signature(build_cmd)
+
+    model: str | None = None
+    cached_models = _server_state["cached_models"]
+    if "model" in sig.parameters and request.model_index is not None:
+        # Look up model from cached list by index
+        normalized_backend = _normalize_backend_name(target_backend.name)
+        cached = cached_models.get(normalized_backend, [])
+        if 0 <= request.model_index < len(cached):
+            model = cached[request.model_index]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model_index: {request.model_index}. "
+                f"Fetch models from /backends/{target_backend.name}/models first.",
+            )
+
     # Check if CLI is available
     if not target_backend.is_cli_available():
         raise HTTPException(
             status_code=503,
             detail=f"CLI not found. {target_backend.get_cli_install_instructions()}",
         )
-
-    message = request.message.strip()
-    if not message:
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     # Determine working directory - must be an absolute path (~ is expanded)
     cwd: Path | None = None
@@ -545,26 +566,6 @@ async def create_new_session(request: NewSessionRequest) -> dict:
                 )
         if potential_cwd.is_dir():
             cwd = potential_cwd
-
-    # Build command using target backend
-    # Check if backend supports model parameter (OpenCode does, Claude Code doesn't)
-    build_cmd = target_backend.build_new_session_command
-    sig = inspect.signature(build_cmd)
-
-    model: str | None = None
-    cached_models = _server_state["cached_models"]
-    if "model" in sig.parameters and request.model_index is not None:
-        # Look up model from cached list by index
-        normalized_backend = _normalize_backend_name(target_backend.name)
-        cached = cached_models.get(normalized_backend, [])
-        if 0 <= request.model_index < len(cached):
-            model = cached[request.model_index]
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid model_index: {request.model_index}. "
-                f"Fetch models from /backends/{target_backend.name}/models first.",
-            )
 
     # Determine if we should use permission detection
     skip_permissions = _server_state["is_skip_permissions"]()
