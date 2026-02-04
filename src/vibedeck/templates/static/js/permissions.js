@@ -270,9 +270,11 @@ async function handleGrantNewSession() {
     const { cwd, original_message, backend, model_index } = state.pendingPermission;
 
     // Collect selected permissions (for regular permission denials)
+    // Note: Query for checked radio directly instead of by name, since forEach index
+    // may not match the original denial index when sandbox denials are filtered out
     const permissions = [];
-    dom.permissionDenialsList.querySelectorAll('.denial-item:not(.sandbox-denial)').forEach((item, index) => {
-        const selected = item.querySelector(`input[name="permission-${index}"]:checked`);
+    dom.permissionDenialsList.querySelectorAll('.denial-item:not(.sandbox-denial)').forEach((item) => {
+        const selected = item.querySelector('input[type="radio"]:checked');
         if (selected) {
             permissions.push(selected.value);
         }
@@ -280,8 +282,8 @@ async function handleGrantNewSession() {
 
     // Collect selected directories (for sandbox denials)
     const directories = [];
-    dom.permissionDenialsList.querySelectorAll('.sandbox-denial').forEach((item, index) => {
-        const checkbox = item.querySelector(`input[name="sandbox-dir-${index}"]:checked`);
+    dom.permissionDenialsList.querySelectorAll('.sandbox-denial').forEach((item) => {
+        const checkbox = item.querySelector('input[type="checkbox"]:checked');
         if (checkbox) {
             directories.push(checkbox.value);
         }
@@ -364,9 +366,11 @@ async function handleGrant() {
     const { session_id, original_message, denials } = state.pendingPermission;
 
     // Collect selected permissions (for regular permission denials)
+    // Note: Query for checked radio directly instead of by name, since forEach index
+    // may not match the original denial index when sandbox denials are filtered out
     const permissions = [];
-    dom.permissionDenialsList.querySelectorAll('.denial-item:not(.sandbox-denial)').forEach((item, index) => {
-        const selected = item.querySelector(`input[name="permission-${index}"]:checked`);
+    dom.permissionDenialsList.querySelectorAll('.denial-item:not(.sandbox-denial)').forEach((item) => {
+        const selected = item.querySelector('input[type="radio"]:checked');
         if (selected) {
             permissions.push(selected.value);
         }
@@ -374,8 +378,8 @@ async function handleGrant() {
 
     // Collect selected directories (for sandbox denials)
     const directories = [];
-    dom.permissionDenialsList.querySelectorAll('.sandbox-denial').forEach((item, index) => {
-        const checkbox = item.querySelector(`input[name="sandbox-dir-${index}"]:checked`);
+    dom.permissionDenialsList.querySelectorAll('.sandbox-denial').forEach((item) => {
+        const checkbox = item.querySelector('input[type="checkbox"]:checked');
         if (checkbox) {
             directories.push(checkbox.value);
         }
