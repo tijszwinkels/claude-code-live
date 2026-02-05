@@ -238,6 +238,38 @@ class TestRenderMessage:
         result = render_message(entry)
         assert result == ""
 
+    def test_no_content_placeholder_filtered(self):
+        """Test that '(no content)' streaming placeholders are filtered out."""
+        entry = {
+            "type": "assistant",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "message": {
+                "id": "msg_test",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "(no content)"}],
+                "stop_reason": None,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        }
+        result = render_message(entry)
+        assert result == ""
+
+    def test_no_content_with_stop_reason_not_filtered(self):
+        """Test that '(no content)' with a stop_reason is NOT filtered."""
+        entry = {
+            "type": "assistant",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "message": {
+                "id": "msg_test",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "(no content)"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        }
+        result = render_message(entry)
+        assert result != ""
+
     def test_unknown_type_returns_empty(self):
         """Test that unknown types return empty string."""
         entry = {

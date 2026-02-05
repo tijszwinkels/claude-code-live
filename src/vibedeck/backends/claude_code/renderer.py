@@ -176,6 +176,25 @@ def render_assistant_message(message_data: dict) -> str:
     return "".join(render_content_block(block) for block in content)
 
 
+def _is_no_content_placeholder(message_data: dict) -> bool:
+    """Check if a message is a streaming placeholder with literal '(no content)'.
+
+    Claude Code writes these as the initial chunk for Opus 4.5 responses
+    before real content (thinking/text/tool_use) arrives.
+    """
+    if message_data.get("stop_reason") is not None:
+        return False
+    content = message_data.get("content", [])
+    if not isinstance(content, list) or len(content) != 1:
+        return False
+    block = content[0]
+    return (
+        isinstance(block, dict)
+        and block.get("type") == "text"
+        and block.get("text", "").strip() == "(no content)"
+    )
+
+
 def render_message(entry: dict) -> str:
     """Render a single message entry to HTML.
 
@@ -192,6 +211,11 @@ def render_message(entry: dict) -> str:
     timestamp = entry.get("timestamp", "")
 
     if not message_data:
+        return ""
+
+    # Skip "(no content)" placeholder entries that Claude Code writes as the
+    # initial streaming chunk for Opus 4.5 before real content arrives.
+    if log_type == "assistant" and _is_no_content_placeholder(message_data):
         return ""
 
     usage = None
