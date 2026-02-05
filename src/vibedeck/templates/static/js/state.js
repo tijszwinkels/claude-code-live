@@ -85,7 +85,12 @@ export const dom = {
     permissionGrantBtn: null,
     permissionRejectBtn: null,
     // Diff view elements
-    diffModeToggle: null
+    diffModeToggle: null,
+    // Terminal elements
+    terminalToggleBtn: null,
+    terminalPanel: null,
+    terminalContainer: null,
+    terminalResizeHandle: null
 };
 
 // Initialize DOM elements
@@ -164,6 +169,11 @@ export function initDom() {
     dom.permissionRejectBtn = document.getElementById('permission-reject-btn');
     // Diff view elements
     dom.diffModeToggle = document.getElementById('diff-mode-toggle');
+    // Terminal elements
+    dom.terminalToggleBtn = document.getElementById('terminal-toggle-btn');
+    dom.terminalPanel = document.getElementById('terminal-panel');
+    dom.terminalContainer = document.getElementById('terminal-container');
+    dom.terminalResizeHandle = document.getElementById('terminal-resize-handle');
 }
 
 // Application state
@@ -249,7 +259,12 @@ export const state = {
     diffMainBranch: null,          // Main branch name (when diff_type is 'vs_main')
     diffCurrentBranch: null,       // Current branch name
     diffSelectedFile: null,        // Currently selected file in diff view
-    diffCwd: null                  // Working directory for diff operations (for worktrees)
+    diffCwd: null,                 // Working directory for diff operations (for worktrees)
+
+    // Terminal state
+    terminalOpen: false,           // Is terminal panel visible?
+    terminalOnly: false,           // Is terminal in full-pane mode?
+    terminalHeight: parseInt(localStorage.getItem('terminalHeight')) || 200
 };
 
 // Initialize status colors based on URL param

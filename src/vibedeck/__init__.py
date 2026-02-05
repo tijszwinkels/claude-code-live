@@ -95,6 +95,12 @@ def main() -> None:
     help="Disable sending messages to Claude Code sessions (enabled by default)",
 )
 @click.option(
+    "--disable-terminal",
+    is_flag=True,
+    default=None,
+    help="Disable embedded terminal feature (enabled by default)",
+)
+@click.option(
     "--dangerously-skip-permissions",
     is_flag=True,
     default=None,
@@ -181,6 +187,7 @@ def serve(
     max_sessions: int | None,
     backend: str | None,
     disable_send: bool | None,
+    disable_terminal: bool | None,
     dangerously_skip_permissions: bool | None,
     fork: bool | None,
     default_send_backend: str | None,
@@ -241,6 +248,9 @@ def serve(
     # Send is enabled by default, disable_send turns it off
     enable_send = not disable_send
 
+    # Terminal is enabled by default, disable_terminal turns it off
+    enable_terminal = not disable_terminal
+
     # Validate flag requirements
     if dangerously_skip_permissions and not enable_send:
         click.echo(
@@ -282,6 +292,7 @@ def serve(
 
     # Configure server features
     server.set_send_enabled(enable_send)
+    server.set_terminal_enabled(enable_terminal)
     server.set_skip_permissions(dangerously_skip_permissions)
     server.set_fork_enabled(fork)
     server.set_include_subagents(include_subagents)

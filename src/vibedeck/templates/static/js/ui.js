@@ -2,6 +2,7 @@
 
 import { dom, state, dateCategoryLabels } from './state.js';
 import { isMobile, escapeHtml, formatTimestamp, formatTokenCount, formatCost, formatModelName, getDateCategory } from './utils.js';
+import { updateTerminalTheme } from './terminal.js';
 
 // Sidebar state management
 export function updateSidebarState() {
@@ -98,6 +99,7 @@ function setTheme(theme) {
     localStorage.setItem('theme', theme);
     dom.themeToggle.innerHTML = theme === 'dark' ? '&#9788;' : '&#9790;';
     dom.themeToggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    updateTerminalTheme();
 }
 
 function toggleTheme() {

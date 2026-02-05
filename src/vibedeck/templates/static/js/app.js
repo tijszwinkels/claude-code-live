@@ -17,6 +17,7 @@ import { initSidebarContextMenu } from './sidebar-context-menu.js';
 import { initPermissions } from './permissions.js';
 import { initDiffView } from './diff.js';
 import { initArtifacts } from './artifacts.js';
+import { initTerminal } from './terminal.js';
 
 // Initialize the application
 function init() {
@@ -58,6 +59,9 @@ function init() {
 
     // Initialize artifacts panel
     initArtifacts();
+
+    // Initialize terminal
+    initTerminal();
 
     // Initialize global click handler for copy buttons (event delegation)
     document.addEventListener('click', function(e) {

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 import watchfiles
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse, Response
 from sse_starlette.sse import EventSourceResponse
 
@@ -61,6 +61,7 @@ _default_send_backend: str | None = None  # Enable with --default-send-backend C
 _include_subagents = False  # Enable with --include-subagents CLI flag
 _enable_thinking = False  # Enable with --enable-thinking CLI flag
 _thinking_budget: int | None = None  # Fixed budget with --thinking-budget CLI flag
+_terminal_enabled = True  # Enabled by default, disable with --disable-terminal CLI flag
 
 # Global state for server (not session-related)
 _watch_task: asyncio.Task | None = None
@@ -155,6 +156,17 @@ def is_fork_enabled() -> bool:
 def is_skip_permissions() -> bool:
     """Check if skip permissions is enabled."""
     return _skip_permissions
+
+
+def set_terminal_enabled(enabled: bool) -> None:
+    """Set whether the terminal feature is enabled."""
+    global _terminal_enabled
+    _terminal_enabled = enabled
+
+
+def is_terminal_enabled() -> bool:
+    """Check if terminal feature is enabled."""
+    return _terminal_enabled
 
 
 # Allowed directories management
@@ -1049,3 +1061,47 @@ async def health() -> dict:
         "sessions": session_count(),
         "clients": len(get_clients()),
     }
+
+
+# Terminal routes
+
+
+@app.get("/api/terminal/enabled")
+async def terminal_enabled() -> dict:
+    """Check if terminal feature is enabled."""
+    from .terminal import is_terminal_available
+
+    return {
+        "enabled": _terminal_enabled and is_terminal_available(),
+    }
+
+
+@app.get("/api/terminal/shells")
+async def terminal_shells() -> dict:
+    """Get available shells and default shell."""
+    from .terminal import terminal_manager
+
+    if not _terminal_enabled:
+        raise HTTPException(status_code=403, detail="Terminal feature is disabled")
+
+    return terminal_manager.get_shells()
+
+
+@app.websocket("/ws/terminal")
+async def terminal_websocket(websocket: WebSocket, cwd: str | None = None) -> None:
+    """WebSocket endpoint for terminal I/O.
+
+    Query params:
+        cwd: Working directory for the terminal (optional)
+    """
+    from .terminal import is_terminal_available, terminal_manager
+
+    if not _terminal_enabled:
+        await websocket.close(code=4003, reason="Terminal feature disabled")
+        return
+
+    if not is_terminal_available():
+        await websocket.close(code=4003, reason="ptyprocess not installed")
+        return
+
+    await terminal_manager.handle_websocket(websocket, cwd)
